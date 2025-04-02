@@ -44,6 +44,7 @@
     "phpstan/phpstan": "^2.1"
   },
   "scripts": {
+    "test": "./vendor/bin/phpunit",
     "phpstan": "phpstan analyse"
   },
   "config": {

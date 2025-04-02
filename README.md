@@ -64,6 +64,8 @@ namespace App\Models;
 use protich\AutoJoinEloquent\Traits\AutoJoinTrait;
 use Illuminate\Database\Eloquent\Model;
 class UserStaff extends User {
+    use AutoJoinTrait;
+
     protected $table = 'users';
     public $timestamps = false;
 
@@ -90,7 +92,7 @@ $results = User::query()
     ->select([
         'name as user_name',
         'agent.id as agent_id',
-        DB::raw('COUNT(agent.departments.id) as dept_count')
+        'COUNT(agent.departments.id) as dept_count'
     ])
     ->where('agent.id', '=', 1)
     ->groupBy('agent.id')
@@ -122,6 +124,30 @@ You can configure default behavior via the package configuration file (if publis
 
 - **use_simple_aliases:** Enable or disable simple sequential alias generation.
 - **join_type:** Set the default join type (e.g., left or inner).
+
+## Running Tests
+
+The package includes a comprehensive test suite built using Orchestra Testbench and an in‑memory SQLite database along with migrations and seeders. This setup simulates a full Laravel environment while keeping tests fast and isolated. It ensures that every part of the auto-join functionality is thoroughly verified—from query compilation to relationship aliasing and clause-specific processing.
+
+You can run the test suite using one of the following methods:
+
+- **Using Composer script**
+  Run all tests with:
+```bash
+  composer test
+```
+
+- **Using Composer with a filter**
+  To run only tests matching a specific filter (e.g., tests containing “Basic”), use:
+  ```bash
+  composer test -- --filter=Basic
+```
+
+- **Directly using PHPUnit**
+  Alternatively, run PHPUnit directly:
+  ```bash
+  ./vendor/bin/phpunit
+```
 
 ## Internal Architecture
 
