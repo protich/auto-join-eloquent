@@ -135,7 +135,7 @@ You can configure default behavior via the package configuration file (if publis
   Classes such as `JoinClauseInfo` and `JoinContext` encapsulate join clause information and context for building JOIN statements.
 
 - **Compilers:**
-  Components like `HavingCompiler`, `OrderByCompiler`, and `GroupByCompiler` compile various parts of the query by interpreting relationship chains and applying alias logic.
+  Components like `SelectCompiler`, `WhereCompiler`, `HavingCompiler`, `OrderByCompiler`, and `GroupByCompiler` compile various parts of the query by interpreting relationship chains and applying alias logic.
 
 - **AutoJoinTrait:**
   A trait you include in your models to enable auto-join behavior and hook into the query builder.
