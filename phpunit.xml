@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="vendor/autoload.php" colors="true">
+    <php>
+        <!-- Database Configuration -->
+        <env name="DB_CONNECTION" value="testing"/>
+        <env name="DB_DATABASE" value=":memory:"/>
+        <env name="DB_PREFIX" value="ost_"/>
+
+        <!-- Auto Join Eloquent Configuration -->
+        <env name="AUTO_JOIN_SIMPLE_ALIASES" value="true"/>
+        <env name="AUTO_JOIN_TYPE" value="left"/>
+        <env name="AUTO_JOIN_DEBUG" value="true"/>
+        <env name="AUTO_JOIN_DEBUG_SQL" value="true"/>
+    </php>
+    <testsuites>
+        <testsuite name="Unit Tests">
+            <directory>./tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Integration Tests">
+            <directory>./tests/Integration</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>

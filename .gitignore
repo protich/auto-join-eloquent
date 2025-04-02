@@ -1,0 +1,29 @@
+# Ignore Composer and Node dependencies that are generated during installation
+/vendor
+/node_modules
+
+# Ignore build artifacts and distribution files
+/build
+/dist
+
+# Ignore temporary and log files
+*.log
+*.tmp
+
+# IDE or editor specific files
+.idea/
+.vscode/
+*.swp
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Test artifacts and code coverage reports (if applicable)
+coverage/
+
+# Ignore PHPUnit cache file
+.phpunit.result.cache
+
+# Ignore the composer.lock file
+composer.lock

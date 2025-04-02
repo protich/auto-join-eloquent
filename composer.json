@@ -1,0 +1,56 @@
+{
+  "name": "protich/auto-join-eloquent",
+  "description": "Extend Eloquent to support auto-joining relationships and aliasing for SELECT, WHERE, ORDERBY, GROUPBY and HAVING clauses",
+  "type": "library",
+  "version": "0.1.0",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Peter Rotich",
+      "email": "peter@osticket.com",
+      "homepage": "https://github.com/protich",
+      "role": "Developer"
+    }
+  ],
+  "require": {
+    "php": ">=8.3",
+    "illuminate/database": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "protich\\AutoJoinEloquent\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "protich\\AutoJoinEloquent\\Tests\\Models\\": "tests/Setup/Models/",
+      "protich\\AutoJoinEloquent\\Tests\\Traits\\": "tests/Traits"
+    },
+    "classmap": [
+      "tests/AutoJoinTestCase.php",
+      "tests/Seeder.php"
+    ]
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "protich\\AutoJoinEloquent\\AutoJoinServiceProvider"
+      ]
+    }
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^9.0",
+    "orchestra/testbench": "^6.0",
+    "phpstan/phpstan": "^2.1"
+  },
+  "scripts": {
+    "phpstan": "phpstan analyse"
+  },
+  "config": {
+    "allow-plugins": {
+      "kylekatarnls/update-helper": true
+    }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}
