@@ -139,13 +139,13 @@ You can run the test suite using one of the following methods:
 
 - **Using Composer with a filter**
   To run only tests matching a specific filter (e.g., tests containing “Basic”), use:
-  ```bash
+```bash
   composer test -- --filter=Basic
 ```
 
 - **Directly using PHPUnit**
   Alternatively, run PHPUnit directly:
-  ```bash
+```bash
   ./vendor/bin/phpunit
 ```
 
