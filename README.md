@@ -179,7 +179,7 @@ Contributions are welcome! Please fork the repository and submit pull requests. 
 
 ## License
 
-This package is open-source software licensed under the MIT License.
+This package is open-source software licensed under the [MIT License](LICENSE).
 
 For more details, visit the project repository:
 [https://github.com/protich/auto-join-eloquent](https://github.com/protich/auto-join-eloquent)
