@@ -3,13 +3,19 @@
 return [
     [
         'user_id'    => 1,
-        'position'   => 'Manager',
+        'position'   => 'Developer',
         'created_at' => date('Y-m-d H:i:s'),
         'updated_at' => date('Y-m-d H:i:s'),
     ],
     [
         'user_id'    => 2,
-        'position'   => 'Support',
+        'position'   => 'Manager',
+        'created_at' => date('Y-m-d H:i:s'),
+        'updated_at' => date('Y-m-d H:i:s'),
+    ],
+    [
+        'user_id'    => 3,
+        'position'   => 'Agent',
         'created_at' => date('Y-m-d H:i:s'),
         'updated_at' => date('Y-m-d H:i:s'),
     ],
