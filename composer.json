@@ -23,8 +23,8 @@
   },
   "autoload-dev": {
     "psr-4": {
-      "protich\\AutoJoinEloquent\\Tests\\Models\\": "tests/Setup/Models/",
       "protich\\AutoJoinEloquent\\Tests\\Traits\\": "tests/Traits"
+      "protich\\AutoJoinEloquent\\Tests\\Models\\": "tests/Models/",
     },
     "classmap": [
       "tests/AutoJoinTestCase.php",
