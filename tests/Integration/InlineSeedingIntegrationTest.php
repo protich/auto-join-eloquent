@@ -49,7 +49,6 @@ class InlineSeedingIntegrationTest extends AutoJoinTestCase
      * Seed test data for the "users" table inline.
      *
      * Inserts sample records directly into the "users" table using the database connection.
-     * If debugging is enabled, outputs the seeded data via debugResults.
      *
      * @return void
      */
@@ -67,12 +66,6 @@ class InlineSeedingIntegrationTest extends AutoJoinTestCase
                 'updated_at' => now(),
             ],
         ]);
-
-        // If debug is enabled, output the seeded data.
-        if ($this->debug) {
-            $results = array_map('get_object_vars', $this->db->table('users')->get()->all());
-            $this->debugResults($results, 'users');
-        }
     }
 
     /**
@@ -88,9 +81,8 @@ class InlineSeedingIntegrationTest extends AutoJoinTestCase
         // Verify that the "users" table exists.
         $this->assertTrue($this->getSchemaBuilder()->hasTable('users'), 'users table should exist.');
 
-        // Verify that seed data is loaded in the "users" table.
-        $count = $this->db->table('users')->count();
-        $this->assertGreaterThan(0, $count, 'users table should have seeded data.');
+        // Verify that we have records
+        $this->assertNonEmptyResults('users');
 
         // Verify that a specific record exists.
         $peter = $this->db->table('users')->where('name', 'Peter')->first();

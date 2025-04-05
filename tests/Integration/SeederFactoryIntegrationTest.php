@@ -22,16 +22,6 @@ class SeederFactoryIntegrationTest extends AutoJoinTestCase
      */
     public function testSeedingWithFactory(): void
     {
-        $tables = $this->seeder->getTables();
-        $this->assertIsArray($tables);
-
-        if ($this->debug) {
-            echo "\n*** Default Seeder Factory: Tables Content ***\n";
-            $db = $this->getDb();
-            foreach ($tables as $table) {
-                $results = array_map('get_object_vars', $db->table($table)->get()->all());
-                $this->debugResults($results, $table);
-            }
-        }
+        $this->assertTablesNonEmpty();
     }
 }

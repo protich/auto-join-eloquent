@@ -32,10 +32,10 @@ class BasicJoinsTest extends AutoJoinTestCase
         // Execute the query.
         $result = $query->first();
 
-        // Assuming that your common seeders have created a user with name 'Alice' and an associated agent,
+        // Assuming that your common seeders have created a user with name 'Peter Rotich' and an associated agent,
         // we can assert that the auto-join returned the expected data.
         $this->assertNotEmpty($result, 'A result should be returned from the query.');
-        $this->assertEquals('Alice', $result->name, 'The user name should match the seeded value.');
+        $this->assertEquals('Peter Rotich', $result->name, 'The user name should match the seeded value.');
         $this->assertNotNull($result->agent_id, 'The agent id should be present from the auto-join.');
     }
 }

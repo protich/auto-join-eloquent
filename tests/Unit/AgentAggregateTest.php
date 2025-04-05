@@ -42,11 +42,11 @@ class AgentAggregateTest extends AutoJoinTestCase
             'The query should include a GROUP BY clause.'
         );
 
-        // Execute the query.
-        $this->debugResults($query->get()->toArray());
-        $result = $query->first();
+        // Make sure we have results
+        $this->assertNonEmptyResults($query->get()->toArray());
 
         // Verify that the returned record contains the expected fields.
+        $result = $query->first();
         $this->assertNotEmpty($result, 'A record should be returned from the query.');
         $this->assertNotNull($result->agent_name, 'The agent name should be returned.');
         $this->assertNotNull($result->dept_count, 'The department count should be returned.');

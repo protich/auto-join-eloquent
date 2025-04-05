@@ -43,10 +43,11 @@ class AgentAggregateHavingTest extends AutoJoinTestCase
             'The HAVING clause should include a ">" operator.'
         );
 
-        // Execute the query and output the results for debugging.
-        $this->debugResults($query->get()->toArray());
-        $result = $query->first();
+        // Make sure we have results
+        $this->assertNonEmptyResults($query->get()->toArray());
 
+        // Check first record
+        $result = $query->first();
         // Verify that a record is returned.
         $this->assertNotEmpty($result, 'A record should be returned from the query.');
         // Verify that the agent name is present.

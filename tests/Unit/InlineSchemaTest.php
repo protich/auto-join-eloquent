@@ -65,12 +65,11 @@ class InlineSchemaTest extends AutoJoinTestCase
         // Verify that the "users" table exists.
         $this->assertTrue($this->getSchemaBuilder()->hasTable('users'), 'users table should exist.');
 
-        // Verify that seed data is loaded in the "users" table.
-        $count = $this->db->table('users')->count();
-        $this->assertGreaterThan(0, $count, 'users table should have seeded data.');
+        // Make sure it was seeded
+        $this->assertNonEmptyResults('users');
 
         // Verify that a specific record exists.
-        $alice = $this->db->table('users')->where('name', 'Peter')->first();
-        $this->assertNotEmpty($alice, "Record for 'Inline Alice' should be present.");
+        $peter = $this->db->table('users')->where('name', 'Peter')->first();
+        $this->assertNotEmpty($peter, "Record for 'Inline Peter' should be present.");
     }
 }

@@ -35,16 +35,6 @@ class StaticSeedingIntegrationTest extends AutoJoinTestCase
      */
     public function testStaticSeeding(): void
     {
-        $tables = $this->seeder->getTables();
-        $this->assertIsArray($tables);
-
-        if ($this->debug) {
-            echo "\n*** Static Seeding: Tables Content ***\n";
-            $db = $this->getDb();
-            foreach ($tables as $table) {
-                $results = array_map('get_object_vars', $db->table($table)->get()->all());
-                $this->debugResults($results, $table);
-            }
-        }
+        $this->assertTablesNonEmpty();
     }
 }

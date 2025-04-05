@@ -54,9 +54,8 @@ class CompleteAutoJoinTest extends AutoJoinTestCase
         $this->assertStringContainsStringIgnoringCase('order by', $sql);
 
         $results = $query->get();
-        $this->assertNotEmpty($results);
-        $this->debugResults($results->toArray());
-
+        // Make sure we have results
+        $this->assertNonEmptyResults($results->toArray());
         // Get a random row from the results.
         $row = $results->random();
         $this->assertNotNull($row->user_name, 'user_name should not be null.');

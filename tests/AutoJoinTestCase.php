@@ -250,4 +250,57 @@ abstract class AutoJoinTestCase extends TestCase
         }
         echo $line . "\n";
     }
+
+    /**
+     * Assert that a table or result set is not empty, and optionally output debug information.
+     *
+     * This helper method accepts either a table name (string) or a result set (array of objects/arrays).
+     * If a table name is provided, it fetches the records from the database.
+     * It asserts that the number of records is greater than zero.
+     * Additionally, a third parameter can override the global debug flag, forcing debug output
+     * if set to true. This flag defaults to true.
+     *
+     * @param string|array $source     The table name or result set to be asserted.
+     * @param string       $title      Optional title for debug output (defaults to an empty string).
+     * @param bool         $forceDebug Optional flag to force debug output regardless of the global debug flag (defaults to true).
+     *
+     * @return void
+     */
+    protected function assertNonEmptyResults(string|array $source, string $title = '', bool $forceDebug = true): void
+    {
+        if (is_string($source)) {
+            // Fetch results from the specified table.
+            $results = array_map('get_object_vars', $this->db->table($source)->get()->all());
+            $title = $title ?: $source;
+        } else {
+            // Assume it's already a result set.
+            $results = $source;
+        }
+
+        $this->assertNotEmpty($results, "{$title}: The query should return one or more records.");
+
+        //  Print results if debug is on or forced
+        if ($forceDebug || $this->debug) {
+            $this->debugResults($results, $title);
+        }
+    }
+
+    /**
+     * Assert that all expected tables have non-empty results.
+     *
+     * Retrieves the list of tables from the seeder if not provided, asserts that the list is an array,
+     * and then iterates over each table to ensure that it contains data.
+     *
+     * @param array|null $tables Optional array of table names. If null, uses the seeder's tables.
+     * @return void
+     */
+    protected function assertTablesNonEmpty(?array $tables = null): void
+    {
+        $tables = $tables ?? $this->seeder->getTables();
+        $this->assertIsArray($tables, 'Tables should be an array.');
+        foreach ($tables as $table) {
+            $this->assertNonEmptyResults($table, $table);
+        }
+    }
+
 }
