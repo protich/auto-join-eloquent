@@ -69,7 +69,7 @@ class DefaultSeederFactory extends AbstractSeederFactory
         foreach ($agentUserIds as $userId) {
             $agentsData[] = [
                 'user_id'    => $userId,
-                'position'   => $faker->jobTitle,
+                'position'   => $userId == 1 ? 'Auto Join Package Developer' : $faker->jobTitle,
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
