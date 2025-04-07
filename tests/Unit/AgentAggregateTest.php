@@ -30,7 +30,7 @@ class AgentAggregateTest extends AutoJoinTestCase
         ])->groupBy('agent.id');
 
         // Retrieve the generated SQL via debugSql() for inspection.
-        $sql = $query->debugSql();
+        $sql = $this->debugSql($query);
         $this->assertStringContainsStringIgnoringCase(
             'COUNT(',
             $sql,

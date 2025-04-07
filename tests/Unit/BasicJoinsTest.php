@@ -26,7 +26,7 @@ class BasicJoinsTest extends AutoJoinTestCase
         ]);
 
         // Check that the generated SQL contains a JOIN clause.
-        $sql = $query->debugSql();
+        $sql = $this->debugSql($query);
         $this->assertStringContainsStringIgnoringCase('JOIN', $sql, 'The query should include a JOIN clause.');
 
         // Execute the query.

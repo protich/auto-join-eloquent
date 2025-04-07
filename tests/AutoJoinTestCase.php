@@ -275,6 +275,7 @@ abstract class AutoJoinTestCase extends TestCase
         } else {
             // Assume it's already a result set.
             $results = $source;
+            $title = $title ?: 'Query Results';
         }
 
         $this->assertNotEmpty($results, "{$title}: The query should return one or more records.");
@@ -303,4 +304,22 @@ abstract class AutoJoinTestCase extends TestCase
         }
     }
 
+    /**
+     * Debug helper: Return the compiled SQL query.
+     *
+     * This method outputs the compiled SQL query in green if either the global debug flag
+     * or the forcedDebug parameter is true, then returns the SQL string.
+     *
+     * @param \Illuminate\Database\Query\Builder $query       The query builder instance.
+     * @param bool                                 $forcedDebug Optional flag to force debug output regardless of the global debug flag (default false).
+     * @return string The compiled SQL query.
+     */
+    public function debugSql($query, bool $forcedDebug = false): string
+    {
+        $sql = $query->toSql();
+        if ($this->debug || $forcedDebug) {
+            echo "\nCompiled Sql:\033[32m " . $sql . "\033[0m\n";
+        }
+        return $sql;
+    }
 }

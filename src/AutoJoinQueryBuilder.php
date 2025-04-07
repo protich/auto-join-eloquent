@@ -812,20 +812,4 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         }
         return $sql;
     }
-
-    /**
-     * Debug helper: Return the compiled SQL query.
-     *
-     * If debugOutput is enabled, echoes the SQL.
-     *
-     * @return string
-     */
-    public function debugSql(): string
-    {
-        $sql = $this->toSql();
-        if ($this->debugOutput) {
-            echo "\nCompiled SQL:\033[32m " . $sql . "\033[0m\n";
-        }
-        return $sql;
-    }
 }

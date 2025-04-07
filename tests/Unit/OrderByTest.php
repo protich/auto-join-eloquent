@@ -29,7 +29,7 @@ class OrderByTest extends AutoJoinTestCase
         ])->orderBy('user_name', 'asc');
 
         // Retrieve the generated SQL via debugSql() for inspection.
-        $sql = $query->debugSql();
+        $sql = $this->debugSql($query);
         $this->assertStringContainsStringIgnoringCase(
             'ORDER BY',
             $sql,

@@ -31,7 +31,7 @@ class AgentAggregateHavingTest extends AutoJoinTestCase
           ->having('dept_count', '>', 1);
 
         // Retrieve the generated SQL via debugSql() for inspection.
-        $sql = $query->debugSql();
+        $sql = $this->debugSql($query);
         $this->assertStringContainsStringIgnoringCase(
             'HAVING',
             $sql,

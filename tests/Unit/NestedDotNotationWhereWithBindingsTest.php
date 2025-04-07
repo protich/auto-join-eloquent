@@ -32,7 +32,7 @@ class NestedDotNotationWhereWithBindingsTest extends AutoJoinTestCase
         ])->where('agent.id', '=', 1);
 
         // Retrieve the generated SQL and the query bindings.
-        $sql = $query->debugSql();
+        $sql = $this->debugSql($query);
         $bindings = $query->getBindings();
 
         // Assert that the SQL contains a WHERE clause with a placeholder.

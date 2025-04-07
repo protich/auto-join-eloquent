@@ -22,7 +22,7 @@ class BaseAliasPreservationTest extends AutoJoinTestCase
         $query = User::query()->select(['id', 'name'])->from('users as u');
 
         // Obtain the generated SQL via the debugSql() method (provided by AutoJoinTestCase).
-        $sql = $query->debugSql();
+        $sql = $this->debugSql($query);
 
         // Assert that the generated SQL contains the expected alias.
         $this->assertStringContainsStringIgnoringCase(
