@@ -71,6 +71,17 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     protected JoinAliasManager $aliasManager;
 
     /**
+     * The base model for the query builder.
+     *
+     * This property holds the instance of the model that the query builder is operating on.
+     * It provides context for generating join clauses. If no base model is explicitly set,
+     * the query builder will fall back to using the model returned by getModel().
+     *
+     * @var \Illuminate\Database\Eloquent\Model|null
+     */
+    protected $baseModel;
+
+    /**
      * Constructor.
      *
      * Initializes the AutoJoinQueryBuilder and creates a new JoinAliasManager.
@@ -132,6 +143,33 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     }
 
     /**
+     * Set the base model for the query builder.
+     *
+     * This method allows you to explicitly define the base model, providing context for
+     * the auto join logic when generating join clauses.
+     *
+     * @param \Illuminate\Database\Eloquent\Model $baseModel The model instance to set as the base.
+     * @return void
+     */
+    public function setBaseModel(Model $baseModel): void
+    {
+        $this->baseModel = $baseModel;
+    }
+
+    /**
+     * Get the base model for the query builder.
+     *
+     * This method returns the base model that has been set. If no base model is explicitly set,
+     * it falls back to using the model associated with the query builder via getModel().
+     *
+     * @return \Illuminate\Database\Eloquent\Model
+     */
+    public function getBaseModel(): Model
+    {
+        return $this->baseModel ?: $this->getModel();
+    }
+
+    /**
      * Get the base alias for the model by delegating to the alias manager.
      *
      * This method uses the model's table name (via getModel()->getTable()) as the key and default.
@@ -141,9 +179,9 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     public function getBaseAlias(): string
     {
         return $this->getAliasManager()->resolveModelAlias(
-            $this->getModel(),
-            $this->getModel()->getTable(),
-            $this->getModel()->getTable()
+            $this->getBaseModel(),
+            $this->getBaseModel()->getTable(),
+            $this->getBaseModel()->getTable()
         );
     }
 
@@ -157,7 +195,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      */
     public function setBaseAlias(string $alias): void
     {
-        $this->getAliasManager()->setAlias($this->getModel()->getTable(), $alias);
+        $this->getAliasManager()->setAlias($this->getBaseModel()->getTable(), $alias);
     }
 
     /**
@@ -170,7 +208,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      */
     public function getBaseTable(): string
     {
-        return $this->getModel()->getTable();
+        return $this->getBaseModel()->getTable();
     }
 
     /**
@@ -338,7 +376,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     public function resolveColumnExpression(string $column, ?string $alias = null): Expression
     {
         // Parse the column into its components: chain, field, and default alias.
-        $parsed = $this->parseColumnChain($column, $this->getModel()->getTable());
+        $parsed = $this->parseColumnChain($column, $this->getBaseModel()->getTable());
 
         // If a relationship chain exists, delegate auto-join processing.
         if (!empty($parsed['chain'])) {
@@ -374,7 +412,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     public function resolveAutoJoinExpression(array $chain, string $fieldName, ?string $fieldAlias = null): Expression
     {
         // Initialize with the base model and its alias.
-        $currentModel = $this->getModel();
+        $currentModel = $this->getBaseModel();
         $currentAlias = $this->getBaseAlias();
         $chainKeyParts = [];
         // Iterate through each segment in the chain.
@@ -699,7 +737,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      */
     protected function isBaseModelColumn(string $column): bool
     {
-        $model = $this->getModel();
+        $model = $this->getBaseModel();
         if ($this->baseModelColumns === null) {
             $this->baseModelColumns = $model
                 ->getConnection()
@@ -771,22 +809,6 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         $sql = parent::toSql();
         if ($this->debugOutput) {
             \Log::debug('[AutoJoin Debug SQL] ' . $sql);
-        }
-        return $sql;
-    }
-
-    /**
-     * Debug helper: Return the compiled SQL query.
-     *
-     * If debugOutput is enabled, echoes the SQL.
-     *
-     * @return string
-     */
-    public function debugSql(): string
-    {
-        $sql = $this->toSql();
-        if ($this->debugOutput) {
-            echo "\nCompiled SQL:\033[32m " . $sql . "\033[0m\n";
         }
         return $sql;
     }

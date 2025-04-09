@@ -17,7 +17,7 @@ class SeedDataTest extends AutoJoinTestCase
         $usersCount = $db->table('users')->count();
         $this->assertGreaterThan(0, $usersCount, 'Users table should have seeded data.');
 
-        $alice = $db->table('users')->where('name', 'Alice')->first();
-        $this->assertNotEmpty($alice, "User 'Alice' should be present in the users table.");
+        $peter = $db->table('users')->where('name', 'Peter Rotich')->first();
+        $this->assertNotEmpty($peter, "User 'Peter Rotich' should be present in the users table.");
     }
 }

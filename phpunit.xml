@@ -7,17 +7,18 @@
         <env name="DB_PREFIX" value="ost_"/>
 
         <!-- Auto Join Eloquent Configuration -->
+        <env name="AUTO_JOIN_TEST_SCHEMA" value="default"/>
         <env name="AUTO_JOIN_SIMPLE_ALIASES" value="true"/>
         <env name="AUTO_JOIN_TYPE" value="left"/>
         <env name="AUTO_JOIN_DEBUG" value="true"/>
         <env name="AUTO_JOIN_DEBUG_SQL" value="true"/>
     </php>
     <testsuites>
-        <testsuite name="Unit Tests">
-            <directory>./tests/Unit</directory>
-        </testsuite>
         <testsuite name="Integration Tests">
             <directory>./tests/Integration</directory>
+        </testsuite>
+        <testsuite name="Unit Tests">
+            <directory>./tests/Unit</directory>
         </testsuite>
     </testsuites>
 </phpunit>

@@ -5,18 +5,20 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-
 class CreateUsersTable extends Migration
 {
     public function up()
     {
         Capsule::schema()->create('users', function (Blueprint $table) {
             $table->increments('id');
+            // Name field for the user.
             $table->string('name');
-            // Added phone field to store a user's phone number.
+            // Optional phone field.
             $table->string('phone')->nullable();
             // Email field for the user.
             $table->string('email')->nullable();
+            // Password field for storing user passwords.
+            $table->string('password');
             $table->timestamps();
         });
     }

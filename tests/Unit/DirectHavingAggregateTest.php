@@ -30,12 +30,10 @@ class DirectHavingAggregateTest extends AutoJoinTestCase
         ->groupBy('agent.id')
         ->havingRaw('COUNT(agent.departments.id) > ?', [0]);
 
-        $sql = $query->debugSql();
+        $sql = $this->debugSql($query);
         $this->assertStringContainsStringIgnoringCase('having', $sql, 'SQL should include a HAVING clause.');
         $this->assertStringContainsStringIgnoringCase('count(', $sql, 'SQL should include a COUNT aggregate.');
-
-        $results = $query->get();
-        $this->debugResults($results->toArray());
-        $this->assertNotEmpty($results, 'The query should return one or more records.');
+        // Make sure we have results
+        $this->assertNonEmptyResults($query->get()->toArray());
     }
 }

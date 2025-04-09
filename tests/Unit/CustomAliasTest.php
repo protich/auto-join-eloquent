@@ -34,7 +34,7 @@ class CustomAliasTest extends AutoJoinTestCase
             'agent.id as staff_id'
         ]);
 
-        $sql = $query->debugSql();
+        $sql = $this->debugSql($query);
 
         // Assert that the compiled SQL contains the custom alias "staff".
         // For example, we expect to see a JOIN clause that uses "AS `staff`".

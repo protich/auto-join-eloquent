@@ -33,14 +33,15 @@ class NestedJoinsWithInnerAgentTest extends AutoJoinTestCase
         ]);
 
         // Retrieve the final SQL using debugSql() for inspection.
-        $sql = $query->debugSql();
+        $sql = $this->debugSql($query);
         $this->assertStringContainsStringIgnoringCase('INNER JOIN', $sql, 'The query should include an INNER JOIN for the agent relationship.');
         $this->assertStringContainsStringIgnoringCase('JOIN', $sql, 'The query should include JOIN clauses for nested relationships.');
-        // Execute the query.
-        $result = $query->first();
-        $this->debugResults($query->get()->toArray());
+
+        // Make sure we have results
+        $this->assertNonEmptyResults($query->get()->toArray());
 
         // Verify that the returned record contains the expected fields.
+        $result = $query->first();
         $this->assertNotEmpty($result, 'A record should be returned from the query.');
         $this->assertNotNull($result->agent_id, 'Agent id should be present from the inner join.');
         $this->assertNotNull($result->dept_name, 'Department name should be present from the nested join.');

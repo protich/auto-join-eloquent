@@ -46,7 +46,7 @@ class CompleteAutoJoinTest extends AutoJoinTestCase
         ->having('dept_count', '>', 1)
         ->orderBy('name', 'asc');
 
-        $sql = $query->debugSql();
+        $sql = $this->debugSql($query);
         $this->assertStringContainsStringIgnoringCase('join', $sql);
         $this->assertStringContainsStringIgnoringCase('count(', $sql);
         $this->assertStringContainsStringIgnoringCase('group by', $sql);
@@ -54,9 +54,8 @@ class CompleteAutoJoinTest extends AutoJoinTestCase
         $this->assertStringContainsStringIgnoringCase('order by', $sql);
 
         $results = $query->get();
-        $this->assertNotEmpty($results);
-        $this->debugResults($results->toArray());
-
+        // Make sure we have results
+        $this->assertNonEmptyResults($results->toArray());
         // Get a random row from the results.
         $row = $results->random();
         $this->assertNotNull($row->user_name, 'user_name should not be null.');
@@ -69,7 +68,7 @@ class CompleteAutoJoinTest extends AutoJoinTestCase
             'name as user_name',
             'agent.id as staff_id',
         ]);
-        $customSql = $customQuery->debugSql();
+        $customSql = $this->debugSql($customQuery);
         $this->assertStringContainsStringIgnoringCase('as "staff"', $customSql);
     }
 }

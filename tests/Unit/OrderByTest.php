@@ -25,11 +25,11 @@ class OrderByTest extends AutoJoinTestCase
         // - agent's name (aliased as agent_name)
         $query = User::query()->select([
             'name as user_name',
-            'agent.id as agent_id'
-        ])->orderBy('agent.id', 'asc');
+            'agent|inner.id as agent_id'
+        ])->orderBy('user_name', 'asc');
 
         // Retrieve the generated SQL via debugSql() for inspection.
-        $sql = $query->debugSql();
+        $sql = $this->debugSql($query);
         $this->assertStringContainsStringIgnoringCase(
             'ORDER BY',
             $sql,
@@ -43,10 +43,9 @@ class OrderByTest extends AutoJoinTestCase
 
         // Execute the query.
         $results = $query->get();
-        $this->debugResults($results->toArray());
 
-        // Verify that results are returned.
-        $this->assertNotEmpty($results, 'The query should return one or more records.');
+        // Make sure we have results
+        $this->assertNonEmptyResults($results->toArray());
 
         // Optionally, check that the agent names are sorted in ascending order.
         $agentNames = $results->pluck('agent_name')->toArray();
