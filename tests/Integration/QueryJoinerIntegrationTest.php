@@ -17,6 +17,10 @@ class User extends Model
     protected $table = 'users';
     public $timestamps = true;
 
+    /**
+     * Summary of agent
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     */
     public function agent()
     {
         return $this->hasOne(Agent::class);
@@ -30,6 +34,10 @@ class Agent extends Model
     protected $table = 'agents';
     public $timestamps = true;
 
+    /**
+     * Summary of user
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
     public function user()
     {
         return $this->belongsTo(User::class, 'user_id');
@@ -48,10 +56,15 @@ class Agent extends Model
  */
 class QueryJoinerIntegrationTest extends AutoJoinTestCase
 {
+    /**
+     * Summary of testQueryJoiner
+     * @return void
+     */
     public function testQueryJoiner()
     {
 
         // Build a query using auto-join notation.
+        /** @phpstan-ignore-next-line */
         $query = User::query()->select([
             'name as agent',
             'email',
@@ -60,6 +73,9 @@ class QueryJoinerIntegrationTest extends AutoJoinTestCase
         ])->withAutoJoins();
 
         // Retrieve the final SQL using debugSql() for inspection.
+        /**
+         * @var \Illuminate\Database\Query\Builder $query
+         */
         $sql = $this->debugSql($query);
         $this->assertStringContainsStringIgnoringCase('INNER JOIN', $sql, 'The query should include an INNER JOIN for the agent relationship.');
         $this->assertStringContainsStringIgnoringCase('JOIN', $sql, 'The query should include JOIN clauses for nested relationships.');

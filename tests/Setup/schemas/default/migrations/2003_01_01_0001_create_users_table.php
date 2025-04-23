@@ -7,6 +7,9 @@ use Illuminate\Support\Facades\Schema;
 
 class CreateUsersTable extends Migration
 {
+    /**
+     * @return void
+     */
     public function up()
     {
         Capsule::schema()->create('users', function (Blueprint $table) {
@@ -23,6 +26,9 @@ class CreateUsersTable extends Migration
         });
     }
 
+    /**
+     * @return void
+     */
     public function down()
     {
         Capsule::schema()->dropIfExists('users');

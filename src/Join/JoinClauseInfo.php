@@ -333,13 +333,14 @@ class JoinClauseInfo
      * This method examines the "wheres" property of the relationship’s query builder
      * and extracts simple "Basic" conditions.
      *
-     * @return array An array of conditions, each as an associative array with keys 'left', 'operator', and 'right'.
+     * @return list<array{left: string, operator: string, right: string}> An array of conditions, each as an associative array with keys 'left', 'operator', and 'right'.
      */
     public function getConditions(): array
     {
         $conditions = [];
         // Get the underlying Query\Builder from the Eloquent builder.
-        $wheres = $this->relation->getQuery()->getQuery()->wheres ?? [];
+        /** @var array<string, array<string, string>> $wheres */
+        $wheres = $this->relation->getQuery()->getQuery()->wheres;
 
         foreach ($wheres as $where) {
             if (isset($where['type']) && $where['type'] === 'Basic') {
@@ -362,7 +363,7 @@ class JoinClauseInfo
      * along with the operator.
      *
      * @param \Illuminate\Database\Query\Grammars\Grammar $grammar The query grammar instance.
-     * @return array An array of conditions, each as an associative array with keys 'left', 'operator', and 'right'.
+     * @return list<array{left: string, operator: string, right: string}> An array of conditions, each as an associative array with keys 'left', 'operator', and 'right'.
      */
     public function getConditionsExpressions(Grammar $grammar): array
     {

@@ -12,7 +12,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder as Query;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Query\Expression;
-
+use Illuminate\Database\Query\JoinClause;
+use Illuminate\Support\Facades\Log;
 
 class AutoJoinQueryBuilder extends EloquentBuilder
 {
@@ -20,7 +21,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     /**
      * Cache for the base model's columns.
      *
-     * @var array|null
+     * @var array<mixed>|null
      */
     protected $baseModelColumns = null;
 
@@ -37,7 +38,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      *
      * This property tracks which joins have been applied to avoid duplicate join clauses.
      *
-     * @var array
+     * @var array<string>
      */
     protected array $autoJoinedRelations = [];
 
@@ -59,7 +60,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     /**
      * The array to store debug information for join operations.
      *
-     * @var array
+     * @var array<int|string, mixed>
      */
     protected array $debugLog = [];
 
@@ -87,7 +88,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * Initializes the AutoJoinQueryBuilder and creates a new JoinAliasManager.
      * The alias manager is responsible for handling alias mapping for relationships.
      *
-     * @param mixed $query
+     * @param \Illuminate\Database\Query\Builder $query
      */
     public function __construct($query)
     {
@@ -134,8 +135,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     /**
      * Get the default join type.
      *
-     * @param string $type
-     * @return void
+     * @return string
      */
     public function getDefaultJoinType(): string
     {
@@ -283,7 +283,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      *
      * @param string      $chainString   A chain string (e.g., "users__agent__departments|inner")
      * @param string|null $baseTableName Optional base table name to remove from the start of the chain.
-     * @return array An array of segments with keys 'relation' and 'join'.
+     * @return array<int,array<string, string>> An array of segments with keys 'relation' and 'join'.
      */
     protected function parseRelationshipChain(string $chainString, ?string $baseTableName = null): array
     {
@@ -326,7 +326,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * @param string      $column    The raw column expression.
      * @param string|null $baseTable Optional base table name.
      * @return array{
-     *     chain: array,
+     *     chain: string[][],
      *     field: string,
      *     alias: string|null
      * }
@@ -403,7 +403,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * If the join has not yet been applied, it processes the join (pivot or normal) via processAutoJoin().
      * Finally, it builds the fully qualified column expression using the alias from the final join.
      *
-     * @param array $chain The parsed relationship chain (an array of arrays with keys 'relation' and 'join').
+     * @param string[][] $chain The parsed relationship chain (an array of arrays with keys 'relation' and 'join').
      * @param string $fieldName The final field name to select.
      * @param string|null $fieldAlias An optional alias to use instead of any parsed alias.
      * @return \Illuminate\Database\Query\Expression The resolved column expression.
@@ -503,7 +503,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             $tableExpression,
             $joinConditions,
             [
-                'table'    => $tableExpression->getValue($grammar),
+                'table'    => $tableExpression->getValue($grammar),// @phpstan-ignore-line
                 'chainKey' => $context->getChainKey(), // Tagged chain key can be modified as needed.
                 'alias'    => $joinAlias,
             ]
@@ -536,6 +536,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         // ----------------------
         // Stage 1: Join the pivot table.
         // ----------------------
+        /** @var string $pivotTable */
         $pivotTable    = $joinInfo->getPivotTable(); // Retrieves the pivot table name.
         $pivotChainKey = $chainKey . '_pivot';
         $pivotAlias    = $this->resolveJoinAlias($model, $pivotChainKey, $pivotTable);
@@ -564,7 +565,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             $pivotConditions,
             [
                 'chainKey' => $pivotChainKey,
-                'table'    => $pivotTableExpr->getValue($grammar),
+                'table'    => $pivotTableExpr->getValue($grammar),// @phpstan-ignore-line
                 'alias'    => $pivotAlias
             ]
         );
@@ -600,7 +601,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             $relatedConditions,
             [
                 'chainKey' => $relatedChainKey,
-                'table'    => $relatedTableExpr->getValue($grammar),
+                'table'    => $relatedTableExpr->getValue($grammar),// @phpstan-ignore-line
                 'alias'    => $relatedAlias
             ]
         );
@@ -623,17 +624,19 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      *
      * @param string     $joinMethod      The join method to use (e.g., 'leftJoin', 'join').
      * @param Expression $tableExpression The table expression (with alias) to join.
-     * @param array      $conditions      An array of conditions, each as an associative array
+     * @param array<mixed>    $conditions      An array of conditions, each as an associative array
      *                                    with keys 'left', 'operator', and 'right'.
-     * @param array      $context         Optional context information for tracking purposes.
+     * @param array<string, mixed>      $context         Optional context information for tracking purposes.
      * @return void
      */
     protected function addJoin(string $joinMethod, $tableExpression, array $conditions, array $context = []): void
     {
         // Retrieve the current query builder instance.
         $query = $this->getQuery();
-        $query->$joinMethod($tableExpression, function ($join) use ($conditions, $joinMethod, $context) {
+        /** @param \Illuminate\Database\Query\JoinClause $join */
+        $query->$joinMethod($tableExpression, function (JoinClause $join) use ($conditions, $joinMethod, $context) {
             // Apply each condition to the join.
+            /** @var array<int, array{left: string, operator: string, right: string}> $conditions */
             foreach ($conditions as $condition) {
                 $join->on($condition['left'], $condition['operator'], $condition['right']);
             }
@@ -654,7 +657,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * the provided context, and a timestamp.
      *
      * @param \Illuminate\Database\Query\JoinClause $join The join clause instance.
-     * @param array $context Additional context information (e.g., tagged chainKey and alias).
+     * @param array<int|string, mixed> $context Additional context information (e.g., tagged chainKey and alias).
      * @return void
      */
     protected function onJoin($join, array $context = []): void
@@ -755,7 +758,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * relation alias map using the parsed expression as the key). Then it rewrites the
      * FROM clause to enforce the base alias and delegates further query compilation to QueryCompiler.
      *
-     * @param Query $query The query builder instance to transform.
+     * @param \Illuminate\Database\Query\Builder $query The query builder instance to transform.
      * @return void
      */
     public function autoJoinQuery(Query $query): void
@@ -765,9 +768,8 @@ class AutoJoinQueryBuilder extends EloquentBuilder
 
         // If the FROM clause is a string and contains an alias, extract
         // alias and table info.
-        if (is_string($from)
-            && ($info = $this->parseAliasClause($from))
-            && $info['alias'] !== null) {
+        $info = $this->parseAliasClause($from);
+        if ($info['alias'] !== null) {
             // NOTE: If the table part (i.e. $info['expression']) is customized,
             // it may result in invalid aliasing. To avoid inconsistencies, we
             // always use the model's table as the key for the base alias.
@@ -788,7 +790,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     /**
      * Retrieve the debug log containing details about each join operation.
      *
-     * @return array
+     * @return array<int|string, mixed>
      */
     public function getDebugLog(): array
     {
@@ -808,7 +810,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     {
         $sql = parent::toSql();
         if ($this->debugOutput) {
-            \Log::debug('[AutoJoin Debug SQL] ' . $sql);
+            Log::debug('[AutoJoin Debug SQL] ' . $sql);
         }
         return $sql;
     }

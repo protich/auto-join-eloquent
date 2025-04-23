@@ -28,7 +28,7 @@ class AgentAggregateHavingTest extends AutoJoinTestCase
             'name as agent_name',
             'COUNT(agent__departments.id) as dept_count'
         ])->groupBy('agent.id')
-          ->having('dept_count', '>', 1);
+          ->having('dept_count', '>', 1); // @phpstan-ignore-line
 
         // Retrieve the generated SQL via debugSql() for inspection.
         $sql = $this->debugSql($query);

@@ -7,6 +7,9 @@ use Illuminate\Support\Facades\Schema;
 
 class CreateAgentDepartmentTable extends Migration
 {
+    /**
+     * @return void
+     */
     public function up()
     {
         Capsule::schema()->create('agent_department', function (Blueprint $table) {
@@ -18,6 +21,9 @@ class CreateAgentDepartmentTable extends Migration
         });
     }
 
+    /**
+     * @return void
+     */
     public function down()
     {
         Capsule::schema()->dropIfExists('agent_department');

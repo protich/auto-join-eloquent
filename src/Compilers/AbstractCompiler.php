@@ -55,7 +55,7 @@ abstract class AbstractCompiler
      * If no dot exists, then no normalization needed
      *
      * @param string $column The raw column expression.
-     * @return array An associative array with keys 'column' and 'alias'.
+     * @return array{column: string, alias: string|null} An associative array with keys 'column' and 'alias'.
      */
     protected function parseColumnParts(string $column): array
     {
@@ -103,7 +103,7 @@ abstract class AbstractCompiler
             return [
                 'aggregateFunction' => strtoupper($matches[1]),
                 'innerExpression'   => trim($matches[2]),
-                'alias'             => isset($matches[3]) ? trim($matches[3]) : null,
+                'alias'             => trim($matches[3]),
                 'outerExpression'   => trim($matches[4]),
             ];
         }
@@ -116,7 +116,11 @@ abstract class AbstractCompiler
      * This method parses the inner expression and delegates to the builder to resolve the
      * fully qualified inner expression. It then constructs the aggregate expression
      *
-     * @param array $info Associative array with keys 'aggregateFunction', 'innerExpression', 'alias'.
+     * @param array{
+     * aggregateFunction: string,
+     * innerExpression: string,
+     * alias: string|null
+     * } $info Associative array with keys 'aggregateFunction', 'innerExpression', 'alias'.
      * @param bool $useDefaultAlias Optional flag; if true, generates a default alias if none is provided.
      * @return \Illuminate\Database\Query\Expression The compiled aggregate expression.
      */
@@ -128,14 +132,13 @@ abstract class AbstractCompiler
         // Delegate to the builder to resolve the fully qualified inner expression.
         $compiledInnerExpression = $this->builder->resolveColumnExpression($innerParsed['column']);
         // Stringify the inner expression.
-        $innerValue = $compiledInnerExpression instanceof Expression
-        ? $compiledInnerExpression->getValue($grammar)
-        : (string) $compiledInnerExpression;
+        /** @var string $innerValue */
+        $innerValue = $compiledInnerExpression->getValue($grammar);// @phpstan-ignore-line
 
         // Determine alias if any
         $alias = !empty($info['alias'])
             ? $info['alias']
-            : ($useDefaultAlias ? $aggregateFunction . '_' . preg_replace('/[^a-zA-Z0-9_]/', '', $innerValue) : null);
+            : ($useDefaultAlias ? $info['aggregateFunction'] . '_' . preg_replace('/[^a-zA-Z0-9_]/', '', $innerValue) : null);
         // Build the aggregate expression.
         $aggregateExpression = sprintf('%s(%s)', $info['aggregateFunction'], $innerValue);
         // Add alias if any

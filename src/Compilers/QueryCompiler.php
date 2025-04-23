@@ -25,7 +25,7 @@ class QueryCompiler extends AbstractCompiler
     protected function compileQuery(Builder $query): Builder
     {
         if (!empty($query->columns)) {
-            $query->columns = $this->compileSelectColumns($query->columns);
+            $query->columns = $this->compileSelectColumns($query->columns); // @phpstan-ignore-line
         }
 
         if (!empty($query->wheres)) {
@@ -49,8 +49,8 @@ class QueryCompiler extends AbstractCompiler
     /**
      * Compile SELECT clause columns using auto-join logic.
      *
-     * @param array $columns
-     * @return array
+     * @param array<string> $columns
+     * @return array<mixed>
      */
     private function compileSelectColumns(array $columns): array
     {
@@ -65,15 +65,16 @@ class QueryCompiler extends AbstractCompiler
     /**
      * Compile WHERE clause conditions using auto-join logic.
      *
-     * @param array $wheres
-     * @return array
+     * @param array<mixed> $wheres
+     * @return array<mixed>
      */
     private function compileWhereColumns(array $wheres): array
     {
         $compiler = new WhereCompiler($this->builder);
-        return collect($wheres)->map(function ($where) use ($compiler) {
+        /** @param array<string, string> $where */
+        return collect($wheres)->map(function (array $where) use ($compiler) {
             if (isset($where['column'])) {
-                $where['column'] = $compiler->compileColumn($where['column']);
+                $where['column'] = $compiler->compileColumn($where['column']); // @phpstan-ignore-line
             }
             return $where;
         })->all();
@@ -82,27 +83,27 @@ class QueryCompiler extends AbstractCompiler
     /**
      * Compile HAVING clause conditions using auto-join logic.
      *
-     * @param array $havings
-     * @return array
+     * @param array<mixed> $havings
+     * @return array<mixed>
      */
     private function compileHavingColumns(array $havings): array
     {
         $compiler = new HavingCompiler($this->builder);
         return collect($havings)->map(function ($having) use ($compiler) {
-            return $compiler->compileClause($having);
+            return $compiler->compileClause($having); // @phpstan-ignore-line
         })->all();
     }
 
     /**
      * Compile GROUP BY clause columns using auto-join logic.
      *
-     * @param array $groups
-     * @return array
+     * @param array<mixed> $groups
+     * @return array<mixed>
      */
     private function compileGroupByColumns(array $groups): array
     {
         $compiler = new GroupByCompiler($this->builder);
-        return collect($groups)->map(function ($group) use ($compiler) {
+        return collect($groups)->map(function (string $group) use ($compiler) {
             return $compiler->compileColumn($group);
         })->all();
     }
@@ -110,15 +111,15 @@ class QueryCompiler extends AbstractCompiler
     /**
      * Compile ORDER BY clause conditions using auto-join logic.
      *
-     * @param array $orders
-     * @return array
+     * @param array<mixed> $orders
+     * @return array<mixed>
      */
     private function compileOrderByColumns(array $orders): array
     {
         $compiler = new OrderByCompiler($this->builder);
         return collect($orders)->map(function ($order) use ($compiler) {
-            if (isset($order['column'])) {
-                $order['column'] = $compiler->compileColumn($order['column']);
+            if (isset($order['column'])) { // @phpstan-ignore-line
+                $order['column'] = $compiler->compileColumn($order['column']); // @phpstan-ignore-line
             }
             return $order;
         })->all();

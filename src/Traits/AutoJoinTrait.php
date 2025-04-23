@@ -2,6 +2,8 @@
 
 namespace protich\AutoJoinEloquent\Traits;
 
+use Illuminate\Database\Query\Builder;
+
 trait AutoJoinTrait
 {
     use AutoJoinQueryBuilderTrait;
@@ -23,7 +25,7 @@ trait AutoJoinTrait
         $builder = $this->newAutoJoinQueryBuilder($query);
 
         // Attach a callback that applies auto join logic before the query is executed.
-        $query->beforeQuery(function ($query) use ($builder) {
+        $query->beforeQuery(function (Builder $query) use ($builder) {
             $builder->autoJoinQuery($query);
         });
 

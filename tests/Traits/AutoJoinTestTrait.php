@@ -23,11 +23,12 @@ trait AutoJoinTestTrait
      *         ['name' => 'Custom User', 'phone' => '000-000-0000', 'email' => 'custom@example.com'],
      *     ]);
      *
-     * @param array $data Optional array of records (each record is an associative array).
+     * @param array<int|string, mixed> $data Optional array of records (each record is an associative array).
      * @return void
      */
     public static function seed(array $data = []): void
     {
+        /** @phpstan-ignore-next-line */
         $table = (new static)->getTable();
         Seeder::seedTable($table, $data);
     }

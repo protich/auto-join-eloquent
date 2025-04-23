@@ -11,11 +11,17 @@ class UserStaff extends User
     protected $table = 'users';
     public $timestamps = false;
 
-    // Define a custom alias for the "agent" relationship.
+    /**
+     * Define a custom alias for the "agent" relationship.
+     * @var array<string, string>
+     */
     public $joinAliases = [
         'agent' => 'staff'
     ];
 
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     */
     public function agent()
     {
         return $this->hasOne(Agent::class, 'user_id');
@@ -24,6 +30,10 @@ class UserStaff extends User
 
 class CustomAliasTest extends AutoJoinTestCase
 {
+    /**
+     * Summary of testCustomAliasIsUsed
+     * @return void
+     */
     public function testCustomAliasIsUsed()
     {
         // Build a query selecting a column from the "agent" relationship.

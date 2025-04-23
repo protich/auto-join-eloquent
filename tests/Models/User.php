@@ -15,6 +15,7 @@ class User extends Model
 
     /**
      * A user is associated with an agent.
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne
      */
     public function agent()
     {
