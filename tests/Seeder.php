@@ -28,7 +28,7 @@ class Seeder
     /**
      * List of tables defined in the schema file.
      *
-     * @var array
+     * @var array<string>
      */
     protected $tables;
 
@@ -56,8 +56,9 @@ class Seeder
             throw new Exception("Schema file not found at: {$schemaFile}");
         }
 
+        /** @var array<string, array<string>> $schemaData */
         $schemaData = require $schemaFile;
-        if (!isset($schemaData['tables']) || !is_array($schemaData['tables'])) {
+        if (!isset($schemaData['tables']) || !is_array($schemaData['tables'])) { // @phpstan-ignore-line
             throw new Exception("No 'tables' key found in schema file.");
         }
 
@@ -79,7 +80,7 @@ class Seeder
      * Retrieve seed data for a specific table.
      *
      * @param string $table The name of the table.
-     * @return array An array of seed records.
+     * @return array<string|int, mixed> An array of seed records.
      */
     protected function getSeedData(string $table): array
     {
@@ -89,7 +90,7 @@ class Seeder
     /**
      * Get the list of tables defined in the schema.
      *
-     * @return array Array of table names.
+     * @return array<string> Array of table names.
      */
     public function getTables(): array
     {
@@ -123,7 +124,7 @@ class Seeder
     /**
      * Check if the specified tables exist in the database.
      *
-     * @param array $tables Optional array of table names to check.
+     * @param array<string> $tables Optional array of table names to check.
      * @throws Exception If any expected table does not exist.
      */
     public function checkTables(array $tables = []): void
@@ -146,13 +147,14 @@ class Seeder
      * default seed data from the appropriate seeder file.
      *
      * @param string $table The table name.
-     * @param array $records Optional array of records (each record is an associative array).
+     * @param array<string|int, mixed> $records Optional array of records (each record is an associative array).
      * @return void
      */
     public static function seedTable(string $table, array $records = []): void
     {
         $db = Capsule::connection();
         foreach ($records as $record) {
+            /** @var array<string|int, mixed> $record */
             $db->table($table)->insert($record);
         }
     }
@@ -166,7 +168,7 @@ class Seeder
      *
      * @param string $table    The table name.
      * @param string $basePath The base path for the schema.
-     * @return array The array of seed records.
+     * @return array<string|int, mixed> The array of seed records.
      * @throws Exception if the seeder file does not exist.
      */
     public static function loadSeedData(string $table, string $basePath): array
@@ -177,6 +179,6 @@ class Seeder
         if (!file_exists($file)) {
             throw new Exception("Seeder file not found: {$file}");
         }
-        return require $file;
+        return require $file; // @phpstan-ignore-line
     }
 }

@@ -39,9 +39,10 @@ trait AutoJoinQueryBuilderTrait
         $builder->setDefaultJoinType($joinType);
 
         // Determine whether to use simple aliases from the property or config.
-        $useSimple = property_exists($this, 'useSimpleAliases')
-            ? $this->useSimpleAliases
-            : config('auto_join_eloquent.use_simple_aliases', true);
+        /**
+         * @var bool $useSimple
+         */
+        $useSimple = $this->useSimpleAliases ?: config('auto_join_eloquent.use_simple_aliases', true);
         $builder->setUseSimpleAliases($useSimple);
 
         // Set the debug output flag.

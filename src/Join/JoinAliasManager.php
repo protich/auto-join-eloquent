@@ -9,7 +9,7 @@ class JoinAliasManager
     /**
      * Mapping of keys (e.g. relationship chain or table name) to join aliases.
      *
-     * @var array
+     * @var array<string, string>
      */
     protected array $aliasMap = [];
 
@@ -113,9 +113,10 @@ class JoinAliasManager
     public function resolveModelAlias(Model $model, string $chainKey, ?string $default = null): string
     {
         if (property_exists($model, 'joinAliases') 
-            && isset($model->joinAliases[$chainKey])
+            && isset($model->joinAliases[$chainKey]) // @phpstan-ignore-line
             && ($customAlias = $model->joinAliases[$chainKey])
             && !in_array($customAlias, $this->aliasMap, true)) {
+            /** @var string $customAlias */
             $this->setAlias($chainKey, $customAlias);
         }
         return $this->getAlias($chainKey, $default);

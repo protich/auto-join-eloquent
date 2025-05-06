@@ -7,6 +7,9 @@ use Illuminate\Support\Facades\Schema;
 
 class CreateDepartmentsTable extends Migration
 {
+    /**
+     * @return void
+     */
     public function up()
     {
         Capsule::schema()->create('departments', function (Blueprint $table) {
@@ -18,6 +21,9 @@ class CreateDepartmentsTable extends Migration
         });
     }
 
+    /**
+     * @return void
+     */
     public function down()
     {
         Capsule::schema()->dropIfExists('departments');

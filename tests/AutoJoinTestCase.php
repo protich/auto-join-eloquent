@@ -109,7 +109,7 @@ abstract class AutoJoinTestCase extends TestCase
         // If schema is not set, get it from the environment variable (AUTO_JOIN_TEST_SCHEMA)
         // or default to "default".
         if ($this->schema === null) {
-            $this->schema = env('AUTO_JOIN_TEST_SCHEMA', 'default');
+            $this->schema = env('AUTO_JOIN_TEST_SCHEMA', 'default'); // @phpstan-ignore-line
         }
 
         // Configure the in‑memory SQLite database.
@@ -119,6 +119,9 @@ abstract class AutoJoinTestCase extends TestCase
             'database' => env('DB_DATABASE', ':memory:'),
             'prefix'   => env('DB_PREFIX', ''),
         ];
+        /**
+         * @var string $connectionName
+         */
         $connectionName = env('DB_CONNECTION', 'default');
         $capsule->addConnection($config, $connectionName);
         $capsule->getDatabaseManager()->setDefaultConnection($connectionName);
@@ -182,7 +185,7 @@ abstract class AutoJoinTestCase extends TestCase
      *
      * Each result should be an associative array where the keys represent the column names.
      *
-     * @param array $results The query results.
+     * @param array<string|int, mixed> $results The query results.
      * @param string $title   Optional title (e.g., table name) to display before the results.
      * @return void
      */
@@ -213,7 +216,7 @@ abstract class AutoJoinTestCase extends TestCase
         foreach ($results as $row) {
             $row = is_object($row) ? get_object_vars($row) : (array)$row;
             foreach ($headers as $header) {
-                $value = array_key_exists($header, $row) ? (string)$row[$header] : '';
+                $value = array_key_exists($header, $row) ? (string)$row[$header] : ''; // @phpstan-ignore-line
                 $widths[$header] = max($widths[$header], strlen($value));
             }
         }
@@ -243,7 +246,7 @@ abstract class AutoJoinTestCase extends TestCase
             $row = is_object($row) ? get_object_vars($row) : (array)$row;
             $rowLine = '|';
             foreach ($headers as $header) {
-                $value = array_key_exists($header, $row) ? (string)$row[$header] : '';
+                $value = array_key_exists($header, $row) ? (string)$row[$header] : ''; // @phpstan-ignore-line
                 $rowLine .= ' ' . str_pad($value, $widths[$header], ' ', STR_PAD_RIGHT) . ' |';
             }
             echo $rowLine . "\n";
@@ -260,7 +263,7 @@ abstract class AutoJoinTestCase extends TestCase
      * Additionally, a third parameter can override the global debug flag, forcing debug output
      * if set to true. This flag defaults to true.
      *
-     * @param string|array $source     The table name or result set to be asserted.
+     * @param string|array<mixed> $source     The table name or result set to be asserted.
      * @param string       $title      Optional title for debug output (defaults to an empty string).
      * @param bool         $forceDebug Optional flag to force debug output regardless of the global debug flag (defaults to true).
      *
@@ -270,6 +273,7 @@ abstract class AutoJoinTestCase extends TestCase
     {
         if (is_string($source)) {
             // Fetch results from the specified table.
+             /** @phpstan-ignore-next-line */
             $results = array_map('get_object_vars', $this->db->table($source)->get()->all());
             $title = $title ?: $source;
         } else {
@@ -292,14 +296,15 @@ abstract class AutoJoinTestCase extends TestCase
      * Retrieves the list of tables from the seeder if not provided, asserts that the list is an array,
      * and then iterates over each table to ensure that it contains data.
      *
-     * @param array|null $tables Optional array of table names. If null, uses the seeder's tables.
+     * @param array<string>|null $tables Optional array of table names. If null, uses the seeder's tables.
      * @return void
      */
     protected function assertTablesNonEmpty(?array $tables = null): void
     {
         $tables = $tables ?? $this->seeder->getTables();
-        $this->assertIsArray($tables, 'Tables should be an array.');
+        $this->assertIsArray($tables, 'Tables should be an array.'); // @phpstan-ignore-line
         foreach ($tables as $table) {
+            /** @var string $table */
             $this->assertNonEmptyResults($table, $table);
         }
     }

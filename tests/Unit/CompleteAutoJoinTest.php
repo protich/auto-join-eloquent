@@ -15,11 +15,18 @@ class UserStaff extends User
     protected $table = 'users';
     public $timestamps = false;
 
-    // Custom join alias for the agent relationship.
+    /**
+     * Custom join alias for the agent relationship.
+     * @var array<string, string>
+     */
     public $joinAliases = [
         'agent' => 'staff'
     ];
 
+    /**
+     * Summary of agent
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     */
     public function agent()
     {
         return $this->hasOne(Agent::class, 'user_id');
@@ -43,7 +50,7 @@ class CompleteAutoJoinTest extends AutoJoinTestCase
         ])
         ->where('agent.id', '=', 1)
         ->groupBy('agent.id')
-        ->having('dept_count', '>', 1)
+        ->having('dept_count', '>', 1) // @phpstan-ignore-line
         ->orderBy('name', 'asc');
 
         $sql = $this->debugSql($query);

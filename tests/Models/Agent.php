@@ -14,6 +14,7 @@ class Agent extends Model
 
     /**
      * An agent belongs to a user.
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function user()
     {
@@ -22,6 +23,7 @@ class Agent extends Model
 
     /**
      * An agent belongs to many departments (via the pivot table).
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
      */
     public function departments()
     {
@@ -32,8 +34,8 @@ class Agent extends Model
     /**
      * An agent may have many tickets assigned.
      */
-    public function tickets()
-    {
-        return $this->hasMany(Ticket::class, 'agent_id');
-    }
+    // public function tickets()
+    // {
+    //     return $this->hasMany(Ticket::class, 'agent_id');
+    // }
 }

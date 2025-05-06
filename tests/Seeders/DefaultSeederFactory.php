@@ -81,8 +81,8 @@ class DefaultSeederFactory extends AbstractSeederFactory
         // 3. Create 6 departments.
         $deptNames = ['Sales', 'Marketing', 'Development', 'Support', 'HR', 'Finance'];
         $departmentsData = [];
-        for ($i = 0; $i < 6; $i++) {
-            $name = $deptNames[$i] ?? ucfirst($faker->word);
+        for ($i = 0; $i < count($deptNames); $i++) {
+            $name = $deptNames[$i];
             $departmentsData[] = [
                 'name'       => $name,
                 'created_at' => now(),

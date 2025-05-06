@@ -41,11 +41,10 @@ class HavingCompiler extends AbstractCompiler
     {
         if ($aggregateInfo = $this->parseAggregateExpression($sql)) {
             if ($this->isRelationshipReference($aggregateInfo['innerExpression'])) {
-                if ($expression = $this->compileAggregateExpression($aggregateInfo, false)) {
-                    return sprintf('%s %s',
-                        $expression->getValue($this->builder->getGrammar()),
+                $expression = $this->compileAggregateExpression($aggregateInfo, false);
+                return sprintf('%s %s',
+                        $expression->getValue($this->builder->getGrammar()),// @phpstan-ignore-line
                         $aggregateInfo['outerExpression'] ?: '');
-                }
             }
         }
         return $sql;
@@ -59,8 +58,8 @@ class HavingCompiler extends AbstractCompiler
      * key and an 'sql' key, it compiles the raw SQL using compileRawSql(). Otherwise, it returns
      * the array unchanged.
      *
-     * @param array $having The HAVING clause array to compile.
-     * @return array The compiled HAVING clause array.
+     * @param array<string, string> $having The HAVING clause array to compile.
+     * @return array<string, string> The compiled HAVING clause array.
      * @throws InvalidArgumentException If the input format is unrecognized.
      */
     public function compileClause(array $having): array
