@@ -2,30 +2,28 @@
 
 namespace protich\AutoJoinEloquent\Compilers;
 
-use protich\AutoJoinEloquent\AutoJoinQueryBuilder;
 use Illuminate\Database\Query\Expression;
 
-class SelectCompiler extends AbstractCompiler
+/**
+ * SelectCompiler
+ *
+ * Compiles SELECT clause column expressions with alias support.
+ * Inherits all COALESCE and aggregate handling from BaseCompiler.
+ */
+class SelectCompiler extends BaseCompiler
 {
-
     /**
      * Compile a SELECT column expression.
      *
-     * If the column represents an aggregate (e.g., "COUNT(agent__departments.id) as dept_count"),
-     * this method compiles it using compileAggregateExpression() (with useDefaultAlias true).
-     * Otherwise, it parses the column expression (normalizing any dot notation to "__")
-     * and delegates to the builder's resolveColumnExpression() method.
+     * This override forces aliasing to be allowed, which is appropriate for SELECT.
+     * The second parameter is required for method signature compatibility.
      *
-     * @param string $column The raw column expression.
-     * @return \Illuminate\Database\Query\Expression The compiled column expression.
+     * @param string $column
+     * @param bool $allowAlias Required for compatibility; ignored here.
+     * @return Expression
      */
-    public function compileColumn(string $column): Expression
+    public function compileColumn(string $column, bool $allowAlias = false): Expression
     {
-        if ($aggregateInfo = $this->parseAggregateExpression($column)) {
-            return $this->compileAggregateExpression($aggregateInfo, true);
-        }
-
-        $parts = $this->parseColumnParts($column);
-        return $this->builder->resolveColumnExpression($parts['column'], $parts['alias']);
+        return parent::compileColumn($column, true);
     }
 }
