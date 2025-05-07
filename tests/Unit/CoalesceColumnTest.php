@@ -1,9 +1,9 @@
 <?php
 
-namespace Protich\AutoJoinEloquent\Tests\Unit;
+namespace protich\AutoJoinEloquent\Tests\Unit;
 
-use Protich\AutoJoinEloquent\Tests\AutoJoinTestCase;
-use Protich\AutoJoinEloquent\Tests\Models\User;
+use protich\AutoJoinEloquent\Tests\AutoJoinTestCase;
+use protich\AutoJoinEloquent\Tests\Models\User;
 use Illuminate\Support\Facades\DB;
 
 class CoalesceColumnTest extends AutoJoinTestCase
