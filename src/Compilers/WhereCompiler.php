@@ -3,29 +3,35 @@
 namespace protich\AutoJoinEloquent\Compilers;
 
 use Illuminate\Database\Query\Expression;
+use Exception;
 
-class WhereCompiler extends AbstractCompiler
+/**
+ * WhereCompiler
+ *
+ * Compiles WHERE clause column expressions.
+ * Disallows aggregates (e.g. COUNT, SUM) and supports COALESCE with aliasing disabled.
+ */
+class WhereCompiler extends BaseCompiler
 {
-
     /**
      * Compile a WHERE clause column expression.
      *
-     * Checks if the column represents an aggregate function.
-     * If an aggregate is detected, an exception is thrown since aggregates are not allowed in WHERE clauses.
-     * Otherwise, the method normalizes the column expression and delegates to the builder's resolveColumnExpression()
-     * method to produce the fully qualified expression.
+     * WHERE clauses cannot include aggregate functions.
+     * This override throws if an aggregate is detected, but otherwise delegates
+     * to the parent compiler with aliasing disabled (as WHERE does not accept aliases).
      *
-     * @param string $column The raw WHERE clause column expression.
-     * @return \Illuminate\Database\Query\Expression The compiled column expression.
-     * @throws \Exception If an aggregate expression is detected.
+     * @param string $column The raw column expression.
+     * @param bool $allowAlias Required by signature, ignored here.
+     * @return Expression The compiled expression for the WHERE clause.
+     * @throws Exception If an aggregate expression is used in WHERE.
      */
-    public function compileColumn(string $column): Expression
+    public function compileColumn(string $column, bool $allowAlias = false): Expression
     {
-        if ($aggregateInfo = $this->parseAggregateExpression($column)) {
-            throw new \Exception("Aggregate expressions are not allowed in WHERE clauses.");
+        if ($this->parseAggregateExpression($column)) {
+            throw new Exception("Aggregate expressions are not allowed in WHERE clauses.");
         }
 
-        $parts = $this->parseColumnParts($column);
-        return $this->builder->resolveColumnExpression($parts['column']);
+        // Aliasing not allowed — pass false explicitly
+        return parent::compileColumn($column, false);
     }
 }
