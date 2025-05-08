@@ -9,83 +9,71 @@ use Illuminate\Database\Query\Expression;
  * BaseCompiler
  *
  * Provides shared logic for compiling SQL expressions across SELECT, WHERE, HAVING, GROUP BY, and ORDER BY clauses.
- * Supports COALESCE, aggregate functions, and alias-aware resolution through AutoJoinQueryBuilder.
+ * Handles support for:
+ * - Relationship-aware column resolution
+ * - Suffix-based aggregates (e.g., __counts)
+ * - COALESCE(...) expressions
+ * - Aggregate SQL parsing (e.g., COUNT(...), SUM(...))
  */
 abstract class BaseCompiler
 {
-    /**
-     * The query builder instance responsible for relationship-aware resolution.
-     *
-     * @var AutoJoinQueryBuilder
-     */
     protected AutoJoinQueryBuilder $builder;
 
-    /**
-     * Constructor.
-     *
-     * @param AutoJoinQueryBuilder $builder
-     */
     public function __construct(AutoJoinQueryBuilder $builder)
     {
         $this->builder = $builder;
     }
 
     /**
-     * Compile an array of clause entries using the appropriate logic for each type.
+     * Compile an array of clause entries (e.g. columns, orders, havings).
      *
-     * Each item in the clause array may be one of:
-     * - A scalar string (e.g., 'name') typically used in SELECT or GROUP BY
-     * - An Expression object (e.g., DB::raw(...)), which will be compiled like a string
-     * - A structured clause array (e.g., ['column' => '...', 'direction' => 'asc'])
-     * - A raw SQL clause array (e.g., ['type' => 'Raw', 'sql' => '...'])
+     * Handles string inputs, structured arrays, and Expression objects.
      *
-     * This method normalizes each clause entry and applies compileColumn() or compileRawSql()
-     * as needed, returning a transformed clause array that is safe for Laravel’s grammar layer.
-     *
-     * @param array $clauses An array of clauses to compile.
-     * @return array The compiled clause array with resolved expressions.
+     * @param array<array|string|Expression> $clauses
+     * @return array<array|string|Expression>
      */
     public function compileClause(array $clauses): array
     {
-        return collect($clauses)->map(function ($clause) {
-            // Normalize Expression: convert to string so it can be parsed
+        return collect($clauses)->map(function (string|array|Expression $clause) {
+            // Unwrap Expression to raw SQL string
             if ($clause instanceof Expression) {
                 // @phpstan-ignore-next-line
                 $clause = $clause->getValue($this->builder->getGrammar());
             }
 
-            // Scalar input (e.g., 'name', 'COALESCE(...)') — compile directly
+            // Handle scalar column (e.g., 'user.id')
             if (is_string($clause)) {
                 return $this->compileColumn($clause);
             }
 
-            // Structured clause (e.g., ['column' => 'name'] or ['type' => 'Raw', 'sql' => '...'])
+            // Structured clause: column or raw SQL
             if (is_array($clause)) {
-
-                // Handle structured column clause
+                // ['column' => 'user.id__counts']
                 if (isset($clause['column'])) {
-                    $compiled = $this->compileColumn($clause['column']);
+                    $compiled = $this->compileColumn((string) $clause['column']);
                     $clause['column'] = $compiled instanceof Expression ? $compiled : (string) $compiled;
                     return $clause;
                 }
 
-                // Handle structured raw SQL clause (e.g., HAVING, ORDER BY)
-                if (isset($clause['sql']) && strcasecmp($clause['type'] ?? '', 'Raw') === 0) {
-                    $clause['sql'] = $this->compileRawSql($clause['sql']);
+                // ['type' => 'Raw', 'sql' => 'COUNT(...) > 5']
+                if (isset($clause['sql']) && strcasecmp((string) ($clause['type'] ?? ''), 'Raw') === 0) {
+                    $clause['sql'] = $this->compileRawSql((string) $clause['sql']);
                     return $clause;
                 }
             }
 
-            // Fallback: return clause unchanged if structure not recognized
             return $clause;
         })->all();
     }
 
     /**
-     * Compile a column expression.
+     * Compile a single column expression.
      *
-     * Handles COALESCE(...) and aggregate functions.
-     * Aliases (e.g. 'AS alias') are applied only if $allowAlias is true.
+     * Supports:
+     * - Aggregates (COUNT(...), SUM(...))
+     * - Suffix-based aggregates (e.g., __counts)
+     * - COALESCE(...)
+     * - Basic relationship-aware columns
      *
      * @param string $column
      * @param bool $allowAlias
@@ -110,7 +98,7 @@ abstract class BaseCompiler
     }
 
     /**
-     * Compile a raw SQL string, resolving aggregates or COALESCE if needed.
+     * Compile raw SQL (HAVING/ORDER) that may contain COUNT(...) or COALESCE().
      *
      * @param string $sql
      * @return string
@@ -131,21 +119,12 @@ abstract class BaseCompiler
     }
 
     /**
-     * Parse a column string into base expression and optional alias.
+     * Parse column expression into normalized parts.
      *
-     *     "users.agent.id as some_alias"
+     * Supports aliasing (e.g., 'user.id as user_id') and relationship conversion.
      *
-     * becomes:
-     *
-     *     [
-     *         'column' => "users__agent.id",
-     *         'alias'      => "some_alias"
-     *     ]
-     *
-     * If no dot exists, then no normalization needed
-     *
-     * @param string $column The raw column expression.
-     * @return array{column: string, alias: string|null} An associative array with keys 'column' and 'alias'.
+     * @param string $column
+     * @return array{column: string, alias: string|null}
      */
     protected function parseColumnParts(string $column): array
     {
@@ -154,9 +133,10 @@ abstract class BaseCompiler
 
         if (preg_match('/^(.*?)\s+as\s+(.*?)$/i', $column, $matches)) {
             $column = trim($matches[1]);
-            $alias = trim($matches[2]);
+            $alias = trim($matches[2]) ?: null;
         }
 
+        // Normalize dot notation (user.agent.id → user__agent.id)
         $parts = explode('.', $column);
         if (count($parts) > 1) {
             $field = array_pop($parts);
@@ -170,25 +150,47 @@ abstract class BaseCompiler
     }
 
     /**
-     * Parse an aggregate expression.
-     *
-     * Supports:
-     * - COUNT(...), SUM(...), etc.
-     * - With optional alias or trailing condition (e.g. '> ?', 'IS NOT NULL')
+     * Detect and parse aggregate functions, including suffix-based style (e.g., __counts).
      *
      * @param string $expression
      * @return array{aggregateFunction: string, innerExpression: string, alias: string|null, outerExpression: string}|false
      */
     protected function parseAggregateExpression(string $expression): array|false
     {
-        if (preg_match('/^(COUNT|SUM|AVG|MIN|MAX)\((.+?)\)(?:\s+as\s+(\w+))?(.*)$/i', $expression, $matches)) {
-            $alias = isset($matches[3]) ? trim($matches[3]) : null;
+        // Standard SQL function: COUNT(user.id)
+        if (preg_match('/^(COUNT|SUM|AVG|MIN|MAX)\((.+?)\)(?:\s+as\s+(\w+))?(.*)$/i', $expression, $m)) {
+            $alias = isset($m[3]) ? trim($m[3]) : null;
 
             return [
-                'aggregateFunction' => strtoupper($matches[1]),
-                'innerExpression'   => trim($matches[2]),
+                'aggregateFunction' => strtoupper($m[1]),
+                'innerExpression'   => trim($m[2]),
                 'alias'             => $alias !== '' ? $alias : null,
-                'outerExpression'   => trim($matches[4] ?? ''),
+                'outerExpression'   => trim($m[4] ?? ''),
+            ];
+        }
+
+        // Suffix-based shorthand (e.g., user.id__counts)
+        if (!($this instanceof WhereCompiler || $this instanceof GroupByCompiler)
+            && preg_match('/^(.*?)__(counts|sum|avg|min|max)(?:\s+as\s+(\w+))?$/i', $expression, $m)) {
+
+            $functionMap = [
+                'counts' => 'COUNT',
+                'sum'    => 'SUM',
+                'avg'    => 'AVG',
+                'min'    => 'MIN',
+                'max'    => 'MAX',
+            ];
+
+            $function = $functionMap[strtolower($m[2])] ?? null;
+            if (!$function) {
+                return false;
+            }
+
+            return [
+                'aggregateFunction' => $function,
+                'innerExpression'   => trim($m[1]),
+                'alias'             => isset($m[3]) && $m[3] !== '' ? $m[3] : null,
+                'outerExpression'   => '',
             ];
         }
 
@@ -196,9 +198,9 @@ abstract class BaseCompiler
     }
 
     /**
-     * Compile an aggregate expression into a string with optional trailing condition.
+     * Compile an aggregate clause (COUNT, SUM, etc.).
      *
-     * @param array $info
+     * @param array{aggregateFunction: string, innerExpression: string, alias: string|null, outerExpression: string} $info
      * @return string
      */
     protected function compileAggregate(array $info): string
@@ -208,14 +210,14 @@ abstract class BaseCompiler
         $sql = $expr->getValue($this->builder->getGrammar());
 
         if (!empty($info['outerExpression'])) {
-            $sql .= ' ' . $info['outerExpression'];
+            $sql .= ' ' . (string) $info['outerExpression'];
         }
 
         return $sql;
     }
 
     /**
-     * Compile an aggregate expression into a Laravel Expression.
+     * Compile an aggregate expression into a wrapped Expression.
      *
      * @param array{aggregateFunction: string, innerExpression: string, alias: string|null} $info
      * @param bool $useDefaultAlias
@@ -224,14 +226,14 @@ abstract class BaseCompiler
     protected function compileAggregateExpression(array $info, bool $useDefaultAlias = false): Expression
     {
         $grammar = $this->builder->getGrammar();
-
         $parsed = $this->parseColumnParts($info['innerExpression']);
         $resolved = $this->builder->resolveColumnExpression($parsed['column']);
 
+        // @phpstan-ignore-next-line
         $innerSql = $resolved instanceof Expression
-            // @phpstan-ignore-next-line
             ? $resolved->getValue($grammar)
             : (string) $resolved;
+
         $alias = $info['alias']
             ?? ($useDefaultAlias ? $info['aggregateFunction'] . '_' . preg_replace('/[^a-zA-Z0-9_]/', '', $innerSql) : null);
 
@@ -245,42 +247,39 @@ abstract class BaseCompiler
     }
 
     /**
-     * Parse a COALESCE(...) expression into fields + optional alias/condition.
+     * Parse a COALESCE(...) expression with optional alias and condition.
      *
      * @param string $expression
      * @return array{fields: string[], alias: string|null, outerExpression: string}|false
      */
     protected function parseCoalesceExpression(string $expression): array|false
     {
-        if (!preg_match('/^COALESCE\s*\((.*?)\)(.*)$/i', $expression, $matches)) {
+        if (!preg_match('/^COALESCE\s*\((.*?)\)(.*)$/i', $expression, $m)) {
             return false;
         }
 
-        $fields = array_map('trim', explode(',', $matches[1]));
-        $remainder = trim($matches[2] ?? '');
+        $fields = array_map('trim', explode(',', $m[1]));
+        $remainder = trim($m[2] ?? '');
 
         $alias = null;
         $outer = '';
 
-        if (preg_match('/^as\s+([a-zA-Z_][a-zA-Z0-9_]*)(.*)$/i', $remainder, $aliasMatches)) {
-            $alias = trim($aliasMatches[1]);
-            $outer = trim($aliasMatches[2] ?? '');
+        if (preg_match('/^as\s+([a-zA-Z_][a-zA-Z0-9_]*)(.*)$/i', $remainder, $am)) {
+            $alias = trim($am[1]) ?: null;
+            $outer = trim($am[2] ?? '');
         } else {
             $outer = $remainder;
         }
 
         return [
-            'fields'          => $fields,
-            'alias'           => $alias,
+            'fields' => $fields,
+            'alias' => $alias,
             'outerExpression' => $outer,
         ];
     }
 
     /**
-     * Compile a COALESCE(...) expression into raw SQL.
-     *
-     * @param array $info
-     * @return string
+     * @param array{fields: string[], alias: string|null, outerExpression: string} $info
      */
     protected function compileCoalesce(array $info): string
     {
@@ -289,16 +288,16 @@ abstract class BaseCompiler
         $sql = $expr->getValue($this->builder->getGrammar());
 
         if (!empty($info['outerExpression'])) {
-            $sql .= ' ' . $info['outerExpression'];
+            $sql .= ' ' . (string) $info['outerExpression'];
         }
 
         return $sql;
     }
 
     /**
-     * Compile a COALESCE(...) expression into a Laravel Expression.
+     * Compile a COALESCE(...) expression into a wrapped Expression.
      *
-     * @param array $info
+     * @param array{fields: string[], alias: string|null} $info
      * @return Expression
      */
     protected function compileCoalesceExpression(array $info): Expression
@@ -308,8 +307,8 @@ abstract class BaseCompiler
         $resolved = array_map(function ($field) use ($grammar) {
             $column = $this->parseColumnParts($field)['column'];
             $expr = $this->builder->resolveColumnExpression($column);
+            // @phpstan-ignore-next-line
             return $expr instanceof Expression
-                // @phpstan-ignore-next-line
                 ? $expr->getValue($grammar)
                 : (string) $expr;
         }, $info['fields']);
@@ -324,9 +323,7 @@ abstract class BaseCompiler
     }
 
     /**
-     * Check if a string expression looks like a relationship path.
-     *
-     * Used to determine whether to resolve joins in aggregate/coalesce logic.
+     * Check if a given expression likely references a relationship.
      *
      * @param string $expression
      * @return bool
