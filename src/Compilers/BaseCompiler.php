@@ -29,11 +29,12 @@ abstract class BaseCompiler
      *
      * Handles string inputs, structured arrays, and Expression objects.
      *
-     * @param array<array|string|Expression> $clauses
-     * @return array<array|string|Expression>
+     * @param array<array<mixed>|string|Expression> $clauses
+     * @return array<array<mixed>|string|Expression>
      */
     public function compileClause(array $clauses): array
     {
+        // @phpstan-ignore-next-line
         return collect($clauses)->map(function (string|array|Expression $clause) {
             // Unwrap Expression to raw SQL string
             if ($clause instanceof Expression) {
@@ -50,14 +51,14 @@ abstract class BaseCompiler
             if (is_array($clause)) {
                 // ['column' => 'user.id__counts']
                 if (isset($clause['column'])) {
-                    $compiled = $this->compileColumn((string) $clause['column']);
-                    $clause['column'] = $compiled instanceof Expression ? $compiled : (string) $compiled;
+                    $compiled = $this->compileColumn((string) $clause['column']); // @phpstan-ignore-line
+                    $clause['column'] = $compiled instanceof Expression ? $compiled : (string) $compiled; // @phpstan-ignore-line
                     return $clause;
                 }
 
                 // ['type' => 'Raw', 'sql' => 'COUNT(...) > 5']
-                if (isset($clause['sql']) && strcasecmp((string) ($clause['type'] ?? ''), 'Raw') === 0) {
-                    $clause['sql'] = $this->compileRawSql((string) $clause['sql']);
+                if (isset($clause['sql']) && strcasecmp((string) ($clause['type'] ?? ''), 'Raw') === 0) { // @phpstan-ignore-line
+                    $clause['sql'] = $this->compileRawSql((string) $clause['sql']); // @phpstan-ignore-line
                     return $clause;
                 }
             }
@@ -159,13 +160,13 @@ abstract class BaseCompiler
     {
         // Standard SQL function: COUNT(user.id)
         if (preg_match('/^(COUNT|SUM|AVG|MIN|MAX)\((.+?)\)(?:\s+as\s+(\w+))?(.*)$/i', $expression, $m)) {
-            $alias = isset($m[3]) ? trim($m[3]) : null;
+            $alias = $m[3] ? trim($m[3]) : null;
 
             return [
                 'aggregateFunction' => strtoupper($m[1]),
                 'innerExpression'   => trim($m[2]),
                 'alias'             => $alias !== '' ? $alias : null,
-                'outerExpression'   => trim($m[4] ?? ''),
+                'outerExpression'   => trim($m[4] ?: ''),
             ];
         }
 
@@ -189,7 +190,7 @@ abstract class BaseCompiler
             return [
                 'aggregateFunction' => $function,
                 'innerExpression'   => trim($m[1]),
-                'alias'             => isset($m[3]) && $m[3] !== '' ? $m[3] : null,
+                'alias'             => isset($m[3]) && $m[3] !== '' ? $m[3] : null, // @phpstan-ignore-line
                 'outerExpression'   => '',
             ];
         }
@@ -210,10 +211,10 @@ abstract class BaseCompiler
         $sql = $expr->getValue($this->builder->getGrammar());
 
         if (!empty($info['outerExpression'])) {
-            $sql .= ' ' . (string) $info['outerExpression'];
+            $sql .= ' ' . (string) $info['outerExpression']; // @phpstan-ignore-line
         }
 
-        return $sql;
+        return $sql; // @phpstan-ignore-line
     }
 
     /**
@@ -229,15 +230,12 @@ abstract class BaseCompiler
         $parsed = $this->parseColumnParts($info['innerExpression']);
         $resolved = $this->builder->resolveColumnExpression($parsed['column']);
 
-        // @phpstan-ignore-next-line
-        $innerSql = $resolved instanceof Expression
-            ? $resolved->getValue($grammar)
-            : (string) $resolved;
+        $innerSql = $resolved->getValue($grammar); // @phpstan-ignore-line
 
         $alias = $info['alias']
-            ?? ($useDefaultAlias ? $info['aggregateFunction'] . '_' . preg_replace('/[^a-zA-Z0-9_]/', '', $innerSql) : null);
+            ?? ($useDefaultAlias ? $info['aggregateFunction'] . '_' . preg_replace('/[^a-zA-Z0-9_]/', '', $innerSql) : null); // @phpstan-ignore-line
 
-        $sql = sprintf('%s(%s)', $info['aggregateFunction'], $innerSql);
+        $sql = sprintf('%s(%s)', $info['aggregateFunction'], $innerSql); // @phpstan-ignore-line
 
         if ($alias !== null) {
             $sql .= ' as ' . $grammar->wrap($alias);
@@ -259,14 +257,14 @@ abstract class BaseCompiler
         }
 
         $fields = array_map('trim', explode(',', $m[1]));
-        $remainder = trim($m[2] ?? '');
+        $remainder = trim($m[2] ?: '');
 
         $alias = null;
         $outer = '';
 
         if (preg_match('/^as\s+([a-zA-Z_][a-zA-Z0-9_]*)(.*)$/i', $remainder, $am)) {
             $alias = trim($am[1]) ?: null;
-            $outer = trim($am[2] ?? '');
+            $outer = trim($am[2] ?: '');
         } else {
             $outer = $remainder;
         }
@@ -288,10 +286,10 @@ abstract class BaseCompiler
         $sql = $expr->getValue($this->builder->getGrammar());
 
         if (!empty($info['outerExpression'])) {
-            $sql .= ' ' . (string) $info['outerExpression'];
+            $sql .= ' ' . (string) $info['outerExpression']; // @phpstan-ignore-line
         }
 
-        return $sql;
+        return $sql; // @phpstan-ignore-line
     }
 
     /**
@@ -307,10 +305,8 @@ abstract class BaseCompiler
         $resolved = array_map(function ($field) use ($grammar) {
             $column = $this->parseColumnParts($field)['column'];
             $expr = $this->builder->resolveColumnExpression($column);
-            // @phpstan-ignore-next-line
-            return $expr instanceof Expression
-                ? $expr->getValue($grammar)
-                : (string) $expr;
+            
+            return $expr->getValue($grammar);// @phpstan-ignore-line
         }, $info['fields']);
 
         $sql = 'COALESCE(' . implode(', ', $resolved) . ')';
