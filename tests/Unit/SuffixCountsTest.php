@@ -12,7 +12,7 @@ class SuffixCountsTest extends AutoJoinTestCase
         $query = User::query()
             ->select([
                 'name',
-                'agent__departments.id__counts as dept_count',
+                'agent__departments.id__count as dept_count',
             ])
             ->groupBy('agent.id');
 
@@ -30,10 +30,10 @@ class SuffixCountsTest extends AutoJoinTestCase
         $query = User::query()
             ->select([
                 'name',
-                'agent__departments.id__counts as dept_count',
+                'agent__departments.id__count as dept_count',
             ])
             ->groupBy('agent.id')
-            ->orderBy('agent__departments.id__counts', 'desc');
+            ->orderBy('agent__departments.id__count', 'desc');
 
         $sql = $this->debugSql($query);
 
@@ -48,10 +48,11 @@ class SuffixCountsTest extends AutoJoinTestCase
         $query = User::query()
             ->select([
                 'name',
-                'agent__departments.id__counts as dept_count',
+                'agent__departments.id__count as dept_count',
             ])
             ->groupBy('agent.id')
-            ->having('agent__departments.id__counts', '>', 0); // @phpstan-ignore-line
+            ->having('agent__departments.id__count', '>', 0); // @phpstan-ignore-line
+
 
         $sql = $this->debugSql($query);
 

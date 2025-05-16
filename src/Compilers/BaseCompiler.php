@@ -11,7 +11,7 @@ use Illuminate\Database\Query\Expression;
  * Provides shared logic for compiling SQL expressions across SELECT, WHERE, HAVING, GROUP BY, and ORDER BY clauses.
  * Handles support for:
  * - Relationship-aware column resolution
- * - Suffix-based aggregates (e.g., __counts)
+ * - Suffix-based aggregates (e.g., __count)
  * - COALESCE(...) expressions
  * - Aggregate SQL parsing (e.g., COUNT(...), SUM(...))
  */
@@ -49,7 +49,7 @@ abstract class BaseCompiler
 
             // Structured clause: column or raw SQL
             if (is_array($clause)) {
-                // ['column' => 'user.id__counts']
+                // ['column' => 'user.id__count']
                 if (isset($clause['column'])) {
                     $compiled = $this->compileColumn((string) $clause['column']); // @phpstan-ignore-line
                     $clause['column'] = $compiled instanceof Expression ? $compiled : (string) $compiled; // @phpstan-ignore-line
@@ -72,7 +72,7 @@ abstract class BaseCompiler
      *
      * Supports:
      * - Aggregates (COUNT(...), SUM(...))
-     * - Suffix-based aggregates (e.g., __counts)
+     * - Suffix-based aggregates (e.g., __count)
      * - COALESCE(...)
      * - Basic relationship-aware columns
      *
@@ -151,7 +151,7 @@ abstract class BaseCompiler
     }
 
     /**
-     * Detect and parse aggregate functions, including suffix-based style (e.g., __counts).
+     * Detect and parse aggregate functions, including suffix-based style (e.g., __count).
      *
      * @param string $expression
      * @return array{aggregateFunction: string, innerExpression: string, alias: string|null, outerExpression: string}|false
@@ -170,12 +170,12 @@ abstract class BaseCompiler
             ];
         }
 
-        // Suffix-based shorthand (e.g., user.id__counts)
+        // Suffix-based shorthand (e.g., user.id__count)
         if (!($this instanceof WhereCompiler || $this instanceof GroupByCompiler)
-            && preg_match('/^(.*?)__(counts|sum|avg|min|max)(?:\s+as\s+(\w+))?$/i', $expression, $m)) {
+            && preg_match('/^(.*?)__(count|sum|avg|min|max)(?:\s+as\s+(\w+))?$/i', $expression, $m)) {
 
             $functionMap = [
-                'counts' => 'COUNT',
+                'count' => 'COUNT',
                 'sum'    => 'SUM',
                 'avg'    => 'AVG',
                 'min'    => 'MIN',
