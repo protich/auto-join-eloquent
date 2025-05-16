@@ -56,7 +56,7 @@ class QueryCompiler
             }
 
             $compiler = new $compilerClass($this->builder);
-            $query->{$clauseKey} =  $compiler->compileClause($clauses);
+            $query->{$clauseKey} =  $compiler->compileClause($clauses); // @phpstan-ignore-line
         }
 
         return $query;

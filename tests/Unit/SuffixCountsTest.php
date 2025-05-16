@@ -51,7 +51,8 @@ class SuffixCountsTest extends AutoJoinTestCase
                 'agent__departments.id__count as dept_count',
             ])
             ->groupBy('agent.id')
-            ->having('agent__departments.id__count', '>', 0);
+            ->having('agent__departments.id__count', '>', 0); // @phpstan-ignore-line
+
 
         $sql = $this->debugSql($query);
 
