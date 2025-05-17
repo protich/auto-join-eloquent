@@ -307,55 +307,122 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         }, $segments);
     }
 
-
     /**
-     * Parse a column expression into its constituent parts: a
-     * relationship chain, the final field, and an optional alias.
+     * Parse a column expression into its components: relationship chain, field, and alias.
      *
-     * If a baseTable name is provided, it is passed to
-     * parseRelationshipChain() so that any matching leading segment
-     * can be removed.
+     * Handles dot-based and relationship-based expressions such as:
+     * - 'agent__departments.name as dept_name' → field = 'name', alias = 'dept_name'
+     * - 'agent__departments__manager' → field inferred via relationship, alias inferred if enabled
+     * - 'status' → no chain, direct field
      *
-     * For example:
-     *   Input: "users.agent.id as agent_id" with baseTable = "users"
-     *   Output:
-     *       chain: ['agent']
-     *       field: 'id'
-     *       alias: 'agent_id'
+     * If a dot is found, the expression is split into chain and field.
+     * If not, and the expression contains a relationship marker (`__`), it is parsed as a relationship chain
+     * and normalized to infer the field and possibly an alias.
      *
-     * @param string      $column    The raw column expression.
-     * @param string|null $baseTable Optional base table name.
-     * @return array{
-     *     chain: string[][],
-     *     field: string,
-     *     alias: string|null
-     * }
+     * @param string $column The raw expression (e.g. 'user__agent.name as alias')
+     * @param string|null $baseTable Optional base table name to strip from beginning of chain
+     * @param bool $allowAutoAliasing Whether to allow alias inference when none is provided
+     * @return array{chain: array, field: string|null, alias: string|null}
      */
-    protected function parseColumnChain(string $column, ?string $baseTable = null): array
+    protected function parseColumnChain(string $column, ?string $baseTable = null, bool $allowAutoAliasing = true): array
     {
-        // Extract alias and normalized expression.
         $parsed = $this->parseAliasClause($column);
-        $field = $expression = trim($parsed['expression']);
+        $expression = trim($parsed['expression']);
         $alias = $parsed['alias'];
 
-        // Initialize chain as an empty array.
+        $field = $expression;
         $chain = [];
 
-        // Check for a dot to determine if there's a relationship chain.
         $lastDotPos = strrpos($expression, '.');
+
         if ($lastDotPos !== false) {
-            // Split into chain part and final field.
+            // Dot found → split into relationship chain and field
             $chainPart = substr($expression, 0, $lastDotPos);
             $field = substr($expression, $lastDotPos + 1);
-            // Process the relationship chain, optionally removing a leading
-            // segment matching baseTable.
             $chain = $this->parseRelationshipChain($chainPart, $baseTable);
+        } elseif (str_contains($expression, '__')) {
+            // No dot but has relationship markers → parse as chain, defer field inference
+            $field = null;
+            $chain = $this->parseRelationshipChain($expression, $baseTable);
         }
+
+        return $this->normalizeChainParts([
+            'chain' => $chain,
+            'field' => $field,
+            'alias' => $alias,
+        ], $allowAutoAliasing);
+    }
+
+    /**
+     * Normalize chain parts by inferring a field and possibly an alias if missing.
+     *
+     * This method is only triggered when a field is missing in the parsed expression.
+     * - If the last segment is a valid relationship, its related model's primary key is used as the field.
+     * - If the last segment is not a relationship, it is treated as a field and removed from the chain.
+     * - If no alias is explicitly provided, and auto-aliasing is enabled, the alias is inferred from the chain.
+     *
+     * @param array{chain: array, field: string|null, alias: string|null} $parts
+     * @param bool $allowAutoAliasing Whether to infer an alias from the relationship path if none is provided
+     * @return array{chain: array, field: string, alias: string|null}
+     */
+    protected function normalizeChainParts(array $parts, bool $allowAutoAliasing = true): array
+    {
+        if (!empty($parts['field']) || empty($parts['chain'])) {
+            return $parts;
+        }
+
+        $model = $this->getBaseModel();
+        $chain = $parts['chain'];
+
+        // Remove and inspect the last segment
+        $final = array_pop($chain);
+
+        // Traverse intermediate chain
+        foreach ($chain as $step) {
+            $relation = $step['relation'];
+
+            if (!method_exists($model, $relation)) {
+                return $parts;
+            }
+
+            $rel = $model->{$relation}();
+            if (!($rel instanceof Relation)) {
+                return $parts;
+            }
+
+            $model = $rel->getRelated();
+        }
+
+        $last = $final['relation'];
+
+        // Last is not a relationship method → treat as field
+        if (!method_exists($model, $last)) {
+            return [
+                'chain' => $chain,
+                'field' => $last,
+                'alias' => $parts['alias'],
+            ];
+        }
+
+        $relation = $model->{$last}();
+        if (!($relation instanceof Relation)) {
+            return [
+                'chain' => $chain,
+                'field' => $last,
+                'alias' => $parts['alias'],
+            ];
+        }
+
+        // Valid relationship — re-append and infer field and alias
+        $chain[] = $final;
+        $field = $relation->getRelated()->getKeyName();
 
         return [
             'chain' => $chain,
             'field' => $field,
-            'alias' => $alias,
+            'alias' => $parts['alias'] ?? ($allowAutoAliasing
+            ?  implode('__', array_column($chain, 'relation'))
+            : null),
         ];
     }
 
@@ -363,30 +430,45 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * Resolve a column expression into a fully qualified SQL expression.
      *
      * This method parses a raw column expression using parseColumnChain(), which splits the expression
-     * into a relationship chain, the final field, and a default alias. If the chain is non-empty,
-     * auto-join logic is applied by delegating to resolveAutoJoinExpression(), thereby generating the necessary
-     * JOIN clauses and fully qualifying the column. If no chain is detected, the column is treated as a base model
-     * field (or raw expression); if a base alias is defined (and the field is a base model column), the field is
-     * prefixed accordingly. An alias (if provided either explicitly or via parsing) is appended using an "AS" clause.
+     * into a relationship chain, a terminal field, and an alias. If a chain is detected, the method applies
+     * auto-join logic by delegating to resolveAutoJoinExpression(), generating the necessary JOIN clauses
+     * and fully qualifying the column. If no chain is present, the field is resolved against the base model.
+     * If the field matches a base model column, it is prefixed using the base alias (if applicable).
      *
-     * @param string $column The raw column expression (e.g., "agent.id as agent_id" or "users.name").
-     * @param string|null $alias An optional alias to override any alias specified in the column expression.
-     * @return \Illuminate\Database\Query\Expression The fully resolved SQL expression.
+     * Aliasing behavior:
+     * - If `$alias` is explicitly provided, it takes precedence.
+     * - If no alias is provided and the expression does not contain one, and the field is inferred
+     *   (e.g., from a relationship-only expression like "agent__manager__user"), and `$allowAutoAliasing` is true,
+     *   an alias may be automatically generated from the full relationship chain (e.g., "agent__manager__user").
+     *
+     * This ensures consistent and predictable column aliasing in result sets when fields are derived from relations.
+     *
+     * @param string $column The raw column expression (e.g., "agent.id as agent_id", "agent__manager__user").
+     * @param string|null $alias Optional override for alias parsed from the expression.
+     * @param bool $allowAutoAliasing Whether to allow auto-aliasing when the field is inferred.
+     * @return \Illuminate\Database\Query\Expression The resolved SQL expression.
      */
-    public function resolveColumnExpression(string $column, ?string $alias = null): Expression
+    public function resolveColumnExpression( string $column,
+        ?string $alias = null,
+        bool $allowAutoAliasing = true): Expression
     {
-        // Parse the column into its components: chain, field, and default alias.
-        $parsed = $this->parseColumnChain($column, $this->getBaseModel()->getTable());
+        // Parse the column into components: chain, field, and default alias (with auto-aliasing logic)
+        $parsed = $this->parseColumnChain($column, $this->getBaseModel()->getTable(), $allowAutoAliasing);
 
-        // If a relationship chain exists, delegate auto-join processing.
+        // If a relationship chain is present, delegate to auto-join logic
         if (!empty($parsed['chain'])) {
-            return $this->resolveAutoJoinExpression($parsed['chain'], $parsed['field'], $alias ?: $parsed['alias']);
+            return $this->resolveAutoJoinExpression(
+                $parsed['chain'],
+                $parsed['field'],
+                $alias ?? $parsed['alias']
+            );
         }
 
-        // No relationship chain: handle as a base column or raw expression.
+        // No relationship chain: resolve directly on base model
         $fieldName = $parsed['field'];
-        $fieldAlias = $alias ?: $parsed['alias'] ?: null;
-        // If the field is a base model column, prefix it with the base alias.
+        $fieldAlias = $alias ?? $parsed['alias'];
+
+        // Add table alias if it's a field on the base model
         $tableAlias = $this->isBaseModelColumn($fieldName)
             ? $this->getBaseAlias()
             : null;
@@ -722,7 +804,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         $relation = $model->$relationName();
 
         // Ensure that the returned value is a valid Eloquent relationship.
-        if (!$relation instanceof \Illuminate\Database\Eloquent\Relations\Relation) {
+        if (!$relation instanceof Relation) {
             throw new \Exception("Method {$relationName} on " . get_class($model) . " is not a relationship.");
         }
 

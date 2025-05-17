@@ -228,7 +228,7 @@ abstract class BaseCompiler
     {
         $grammar = $this->builder->getGrammar();
         $parsed = $this->parseColumnParts($info['innerExpression']);
-        $resolved = $this->builder->resolveColumnExpression($parsed['column']);
+        $resolved = $this->builder->resolveColumnExpression($parsed['column'], null, false);
 
         $innerSql = $resolved->getValue($grammar); // @phpstan-ignore-line
 
@@ -304,8 +304,8 @@ abstract class BaseCompiler
 
         $resolved = array_map(function ($field) use ($grammar) {
             $column = $this->parseColumnParts($field)['column'];
-            $expr = $this->builder->resolveColumnExpression($column);
-            
+            $expr = $this->builder->resolveColumnExpression($column, null, false);
+            // @phpstan-ignore-next-line
             return $expr->getValue($grammar);// @phpstan-ignore-line
         }, $info['fields']);
 
