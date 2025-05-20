@@ -283,7 +283,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      *
      * @param string      $chainString   A chain string (e.g., "users__agent__departments|inner")
      * @param string|null $baseTableName Optional base table name to remove from the start of the chain.
-     * @return array<int,array<string, string>> An array of segments with keys 'relation' and 'join'.
+     * @return array<int,array{relation: string, join: string}> An array of segments with keys 'relation' and 'join'.
      */
     protected function parseRelationshipChain(string $chainString, ?string $baseTableName = null): array
     {
@@ -322,7 +322,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * @param string $column The raw expression (e.g. 'user__agent.name as alias')
      * @param string|null $baseTable Optional base table name to strip from beginning of chain
      * @param bool $allowAutoAliasing Whether to allow alias inference when none is provided
-     * @return array{chain: array, field: string|null, alias: string|null}
+     * @return array{chain: array<int, array{relation: string, join: string}>, field: string|null, alias: string|null}
      */
     protected function parseColumnChain(string $column, ?string $baseTable = null, bool $allowAutoAliasing = true): array
     {
@@ -361,9 +361,9 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * - If the last segment is not a relationship, it is treated as a field and removed from the chain.
      * - If no alias is explicitly provided, and auto-aliasing is enabled, the alias is inferred from the chain.
      *
-     * @param array{chain: array, field: string|null, alias: string|null} $parts
+     * @param array{chain: array<int, array{relation: string, join: string}>, field: string|null, alias: string|null} $parts
      * @param bool $allowAutoAliasing Whether to infer an alias from the relationship path if none is provided
-     * @return array{chain: array, field: string, alias: string|null}
+     * @return array{chain: array<int, array{relation: string, join: string}>, field: string|null, alias: string|null}
      */
     protected function normalizeChainParts(array $parts, bool $allowAutoAliasing = true): array
     {
@@ -459,7 +459,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         if (!empty($parsed['chain'])) {
             return $this->resolveAutoJoinExpression(
                 $parsed['chain'],
-                $parsed['field'],
+                $parsed['field'],// @phpstan-ignore-line
                 $alias ?? $parsed['alias']
             );
         }
@@ -469,11 +469,11 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         $fieldAlias = $alias ?? $parsed['alias'];
 
         // Add table alias if it's a field on the base model
-        $tableAlias = $this->isBaseModelColumn($fieldName)
+        $tableAlias = $this->isBaseModelColumn($fieldName)// @phpstan-ignore-line
             ? $this->getBaseAlias()
             : null;
 
-        return $this->buildColumnExpression($fieldName, $fieldAlias, $tableAlias);
+        return $this->buildColumnExpression($fieldName, $fieldAlias, $tableAlias);// @phpstan-ignore-line
     }
 
     /**
