@@ -14,6 +14,7 @@ class CreateAgentsTable extends Migration
     {
         Capsule::schema()->create('agents', function (Blueprint $table) {
             $table->increments('id');
+            $table->unsignedInteger('flags')->default(0);
             // Foreign key referencing users.id.
             $table->unsignedInteger('user_id')->nullable();
             // Position field for the agent.

@@ -99,23 +99,45 @@ abstract class BaseCompiler
     }
 
     /**
-     * Compile raw SQL (HAVING/ORDER) that may contain COUNT(...) or COALESCE().
+     * Compile raw SQL that may contain COUNT(...), COALESCE(...), or bitwise operations.
+     *
+     * This method inspects the raw SQL string to detect and resolve relationship-based
+     * expressions. It compiles aggregate or COALESCE expressions if they reference
+     * relationships. For bitwise expressions (e.g., `ticket.flags & ? = 0`), it resolves
+     * the left-hand side if it's a relationship path.
      *
      * @param string $sql
      * @return string
      */
     public function compileRawSql(string $sql): string
     {
+        // COUNT(...), SUM(...), etc.
         if ($aggregate = $this->parseAggregateExpression($sql)) {
             if ($this->isRelationshipReference($aggregate['innerExpression'])) {
                 return $this->compileAggregate($aggregate);
             }
         }
 
+        // COALESCE(a, b) [as alias]
         if ($coalesce = $this->parseCoalesceExpression($sql)) {
             return $this->compileCoalesce($coalesce);
         }
 
+        // Bitwise operator (e.g., ticket.flags & ? = 0)
+        if ($bitwise = $this->parseBitwiseExpression($sql)) {
+            if ($this->isRelationshipReference($bitwise['left'])) {
+                $resolved = $this->builder->resolveColumnExpression($bitwise['left'], null, false);
+                // @phpstan-ignore-next-line
+                $left = $resolved instanceof Expression
+                    ? $resolved->getValue($this->builder->getGrammar())
+                    : (string) $resolved;
+
+                return sprintf('%s %s %s',
+                    $left, $bitwise['operator'], $bitwise['right']);
+            }
+        }
+
+        // Fallback: return original raw SQL unchanged
         return $sql;
     }
 
@@ -148,6 +170,35 @@ abstract class BaseCompiler
             'column' => $column,
             'alias'  => $alias,
         ];
+    }
+
+    /**
+     * Parse a bitwise expression of the form: `column & something`
+     *
+     * Example:
+     *   "ticket.flags & ? = 0" →
+     *   [
+     *     'left' => 'ticket.flags',
+     *     'operator' => '&',
+     *     'right' => '? = 0'
+     *   ]
+     *
+     * This is useful for resolving the left-hand column as a relationship path.
+     *
+     * @param string $expression
+     * @return array{left: string, operator: string, right: string}|false
+     */
+    protected function parseBitwiseExpression(string $expression): array|false
+    {
+        if (preg_match('/^\s*([a-zA-Z0-9_.]+)\s*(&)\s*(.+)$/', $expression, $matches)) {
+            return [
+                'left'     => trim($matches[1]),
+                'operator' => $matches[2],
+                'right'    => trim($matches[3]),
+            ];
+        }
+
+        return false;
     }
 
     /**
