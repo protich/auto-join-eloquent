@@ -459,7 +459,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         if (!empty($parsed['chain'])) {
             return $this->resolveAutoJoinExpression(
                 $parsed['chain'],
-                $parsed['field'],// @phpstan-ignore-line
+                $parsed['field'], // @phpstan-ignore-line
                 $alias ?? $parsed['alias']
             );
         }
@@ -469,11 +469,11 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         $fieldAlias = $alias ?? $parsed['alias'];
 
         // Add table alias if it's a field on the base model
-        $tableAlias = $this->isBaseModelColumn($fieldName)// @phpstan-ignore-line
+        $tableAlias = $this->isBaseModelColumn($fieldName) // @phpstan-ignore-line
             ? $this->getBaseAlias()
             : null;
 
-        return $this->buildColumnExpression($fieldName, $fieldAlias, $tableAlias);// @phpstan-ignore-line
+        return $this->buildColumnExpression($fieldName, $fieldAlias, $tableAlias); // @phpstan-ignore-line
     }
 
     /**
@@ -585,7 +585,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             $tableExpression,
             $joinConditions,
             [
-                'table'    => $tableExpression->getValue($grammar),// @phpstan-ignore-line
+                'table'    => $tableExpression->getValue($grammar), // @phpstan-ignore-line
                 'chainKey' => $context->getChainKey(), // Tagged chain key can be modified as needed.
                 'alias'    => $joinAlias,
             ]
@@ -647,7 +647,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             $pivotConditions,
             [
                 'chainKey' => $pivotChainKey,
-                'table'    => $pivotTableExpr->getValue($grammar),// @phpstan-ignore-line
+                'table'    => $pivotTableExpr->getValue($grammar), // @phpstan-ignore-line
                 'alias'    => $pivotAlias
             ]
         );
@@ -683,7 +683,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             $relatedConditions,
             [
                 'chainKey' => $relatedChainKey,
-                'table'    => $relatedTableExpr->getValue($grammar),// @phpstan-ignore-line
+                'table'    => $relatedTableExpr->getValue($grammar), // @phpstan-ignore-line
                 'alias'    => $relatedAlias
             ]
         );
