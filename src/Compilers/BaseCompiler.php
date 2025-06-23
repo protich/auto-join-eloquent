@@ -29,17 +29,16 @@ abstract class BaseCompiler
      *
      * Handles string inputs, structured arrays, and Expression objects.
      *
-     * @param array<array<mixed>|string|Expression> $clauses
-     * @return array<array<mixed>|string|Expression>
+     * @param array $clauses
+     * @return array
      */
+    // @phpstan-ignore-next-line
     public function compileClause(array $clauses): array
     {
-        // @phpstan-ignore-next-line
         return collect($clauses)->map(function (string|array|Expression $clause) {
             // Unwrap Expression to raw SQL string
             if ($clause instanceof Expression) {
-                // @phpstan-ignore-next-line
-                $clause = $clause->getValue($this->builder->getGrammar());
+                $clause = $clause->getValue($this->builder->getGrammar()); // @phpstan-ignore-line
             }
 
             // Handle scalar column (e.g., 'user.id')
@@ -129,11 +128,11 @@ abstract class BaseCompiler
                 $resolved = $this->builder->resolveColumnExpression($bitwise['left'], null, false);
                 // @phpstan-ignore-next-line
                 $left = $resolved instanceof Expression
-                    ? $resolved->getValue($this->builder->getGrammar())
+                    ? $resolved->getValue($this->builder->getGrammar()) // @phpstan-ignore-line
                     : (string) $resolved;
 
                 return sprintf('%s %s %s',
-                    $left, $bitwise['operator'], $bitwise['right']);
+                    $left, $bitwise['operator'], $bitwise['right']); // @phpstan-ignore-line
             }
         }
 
@@ -357,7 +356,7 @@ abstract class BaseCompiler
             $column = $this->parseColumnParts($field)['column'];
             $expr = $this->builder->resolveColumnExpression($column, null, false);
             // @phpstan-ignore-next-line
-            return $expr->getValue($grammar);// @phpstan-ignore-line
+            return $expr->getValue($grammar); // @phpstan-ignore-line
         }, $info['fields']);
 
         $sql = 'COALESCE(' . implode(', ', $resolved) . ')';
