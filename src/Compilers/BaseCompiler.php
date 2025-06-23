@@ -103,8 +103,8 @@ abstract class BaseCompiler
      *
      * This method inspects the raw SQL string to detect and resolve relationship-based
      * expressions. It compiles aggregate or COALESCE expressions if they reference
-     * relationships. For bitwise expressions (e.g., `ticket.flags & ? = 0`), it resolves
-     * the left-hand side if it's a relationship path.
+     * resolvable columns. For bitwise expressions (e.g., ticket.flags & ? = 0), it resolves
+     * the left-hand side if it's resolvable.
      *
      * @param string $sql
      * @return string
@@ -113,7 +113,7 @@ abstract class BaseCompiler
     {
         // COUNT(...), SUM(...), etc.
         if ($aggregate = $this->parseAggregateExpression($sql)) {
-            if ($this->isRelationshipReference($aggregate['innerExpression'])) {
+            if ($this->shouldResolveColumn($aggregate['innerExpression'])) {
                 return $this->compileAggregate($aggregate);
             }
         }
@@ -125,7 +125,7 @@ abstract class BaseCompiler
 
         // Bitwise operator (e.g., ticket.flags & ? = 0)
         if ($bitwise = $this->parseBitwiseExpression($sql)) {
-            if ($this->isRelationshipReference($bitwise['left'])) {
+            if ($this->shouldResolveColumn($bitwise['left'])) {
                 $resolved = $this->builder->resolveColumnExpression($bitwise['left'], null, false);
                 // @phpstan-ignore-next-line
                 $left = $resolved instanceof Expression
@@ -370,21 +370,52 @@ abstract class BaseCompiler
     }
 
     /**
-     * Check if a given expression likely references a relationship.
+     * Determine if the given expression appears to reference a relationship chain.
+     *
+     * This method first checks if the expression qualifies for resolution using
+     * shouldResolveColumn(). Then it checks for relationship-specific indicators,
+     * such as dot notation or double underscores.
      *
      * @param string $expression
      * @return bool
      */
     protected function isRelationshipReference(string $expression): bool
     {
+        // Short-circuit: if not resolvable at all, it's not a relationship
+        if (!$this->shouldResolveColumn($expression)) {
+            return false;
+        }
+
+        // Explicit relationship indicators
+        return str_contains($expression, '.') || str_contains($expression, '__');
+    }
+
+    /**
+     * Determine if the given expression should be passed through resolveColumnExpression().
+     *
+     * This includes:
+     * - Dot or double-underscore expressions (e.g., "agent__user.status", "user.name")
+     * - Single-segment identifiers like "flags" that may be aliased
+     *
+     * Expressions containing whitespace or non-column-safe syntax will be ignored.
+     *
+     * @param string $expression
+     * @return bool
+     */
+    protected function shouldResolveColumn(string $expression): bool
+    {
+        // Reject anything with spaces — clearly not a column
         if (str_contains($expression, ' ')) {
             return false;
         }
 
+        // Must be a valid identifier or nested path
         if (!preg_match('/^[A-Za-z_][A-Za-z0-9_.]*$/', $expression)) {
             return false;
         }
 
-        return str_contains($expression, '.') || str_contains($expression, '__');
+        // Allow single-segment fields (e.g., flags), or dotted/underscored paths
+        return true;
     }
+
 }
