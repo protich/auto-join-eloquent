@@ -2,6 +2,7 @@
 
 namespace protich\AutoJoinEloquent\Tests\Unit;
 
+use Illuminate\Database\Eloquent\Builder;
 use protich\AutoJoinEloquent\Tests\AutoJoinTestCase;
 use protich\AutoJoinEloquent\Tests\Models\User;
 
@@ -11,7 +12,7 @@ class NestedWhereTest extends AutoJoinTestCase
     {
         $query = User::query()
             ->select(['name'])
-            ->where(function ($q) {
+            ->where(function (Builder $q) {
                 $q->where('agent__departments__manager__user.id', '=', 1)
                   ->orWhere('agent__departments.name', 'like', 'S%');
             })

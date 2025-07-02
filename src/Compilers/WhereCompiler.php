@@ -42,9 +42,10 @@ class WhereCompiler extends BaseCompiler
      *
      * Recursively compiles nested where groups (type = "Nested") using a fresh WhereCompiler instance.
      *
-     * @param array<int, mixed> $wheres
-     * @return array<int, mixed>
+     * @param array $wheres
+     * @return array
      */
+    // @phpstan-ignore-next-line
     public function compileClause(array $wheres): array
     {
         return collect($wheres)->map(function (mixed $where) {
@@ -54,20 +55,19 @@ class WhereCompiler extends BaseCompiler
                     && $where['query'] instanceof Builder) {
                     // Recursively compile the nested where builder
                     $nestedCompiler = new self($this->builder);
-                    $compiledNested = $nestedCompiler->compileClause($where['query']->wheres ?? []);
+                    $compiledNested = $nestedCompiler->compileClause($where['query']->wheres);
                     $where['query']->wheres = $compiledNested;
                     return $where;
                 }
 
                 // Standard column or raw SQL expression
-                if (isset($where['column'])) {
-                    $compiled = $this->compileColumn((string) $where['column']);
-                    $where['column'] = $compiled instanceof Expression ? $compiled : (string) $compiled;
+                if (isset($where['column']) && is_string($where['column'])) {
+                    $where['column'] = $this->compileColumn( $where['column']);
                 }
 
-                if (isset($where['sql'])
-                    && strcasecmp((string) ($where['type'] ?? ''), 'Raw') === 0) {
-                    $where['sql'] = $this->compileRawSql((string) $where['sql']);
+                if (isset($where['sql']) && is_string($where['sql'])
+                    && strcasecmp( $where['type'] ?? '', 'Raw') === 0) { // @phpstan-ignore-line
+                    $where['sql'] = $this->compileRawSql( $where['sql']);
                 }
             }
 
