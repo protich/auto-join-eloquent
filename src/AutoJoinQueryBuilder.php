@@ -427,6 +427,94 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     }
 
     /**
+     * Determine whether the given column references a model-defined path.
+     *
+     * Model-defined paths begin with the reserved `model__` prefix and are
+     * resolved by delegating path description to the base model.
+     *
+     * @param  string $column
+     * @return bool
+     */
+    public function isModelDefinedPath(string $column): bool
+    {
+        return str_starts_with($column, 'model__');
+    }
+
+    /**
+     * Parse a model-defined column path into its logical path and segments.
+     *
+     * Example:
+     *
+     * - model__status
+     *   => ['path' => 'status', 'segments' => []]
+     *
+     * - model__accessibleDepartments__id__count
+     *   => ['path' => 'accessibleDepartments', 'segments' => ['id', 'count']]
+     *
+     * @param  string $column
+     * @return array{path:string,segments:array<int,string>}
+     *
+     * @throws \InvalidArgumentException
+     */
+    public function parseModelDefinedPath(string $column): array
+    {
+        if (! $this->isModelDefinedPath($column)) {
+            throw new \InvalidArgumentException(sprintf(
+                'Column [%s] is not a model-defined path.',
+                $column
+            ));
+        }
+
+        $parts = explode('__', $column);
+
+        array_shift($parts); // remove "model"
+
+        $path = array_shift($parts);
+
+        if (! is_string($path) || $path === '') {
+            throw new \InvalidArgumentException(sprintf(
+                'Column [%s] does not define a model path name.',
+                $column
+            ));
+        }
+
+        return [
+            'path' => $path,
+            'segments' => array_values(array_filter(
+                $parts,
+                fn ($part) => $part !== ''
+            )),
+        ];
+    }
+
+    /**
+     * Resolve the model-defined path descriptor for the given column.
+     *
+     * This method parses the logical path and delegates descriptor resolution
+     * to the base model via describeAutoJoinPath().
+     *
+     * @param  string $column
+     * @return array{
+     *     path:string,
+     *     segments:array<int,string>,
+     *     descriptor:array<string,mixed>
+     * }
+     */
+    public function describeModelDefinedPath(string $column): array
+    {
+        $parsed = $this->parseModelDefinedPath($column);
+
+        return [
+            'path' => $parsed['path'],
+            'segments' => $parsed['segments'],
+            'descriptor' => $this->getBaseModel()::describeAutoJoinPath(
+                $parsed['path'],
+                $parsed['segments']
+            ),
+        ];
+    }
+
+    /**
      * Resolve a column expression into a fully qualified SQL expression.
      *
      * This method parses a raw column expression using parseColumnChain(), which splits the expression
