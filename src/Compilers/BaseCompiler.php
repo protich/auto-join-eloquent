@@ -73,6 +73,7 @@ abstract class BaseCompiler
      * - Aggregates (COUNT(...), SUM(...))
      * - Suffix-based aggregates (e.g., __count)
      * - COALESCE(...)
+     * - Model-defined paths (e.g., model__status)
      * - Basic relationship-aware columns
      *
      * @param string $column
@@ -87,6 +88,10 @@ abstract class BaseCompiler
 
         if ($coalesce = $this->parseCoalesceExpression($column)) {
             return new Expression($this->compileCoalesce($coalesce));
+        }
+
+        if ($modelPath = $this->parseModelDefinedPathExpression($column)) {
+            return $this->compileModelDefinedPath($modelPath, $allowAlias);
         }
 
         $parsed = $this->parseColumnParts($column);
@@ -125,7 +130,7 @@ abstract class BaseCompiler
         // Bitwise operator (e.g., ticket.flags & ? = 0)
         if ($bitwise = $this->parseBitwiseExpression($sql)) {
             if ($this->shouldResolveColumn($bitwise['left'])) {
-                $resolved = $this->builder->resolveColumnExpression($bitwise['left'], null, false);
+                $resolved = $this->resolveColumnExpression($bitwise['left'], null, false);
                 // @phpstan-ignore-next-line
                 $left = $resolved instanceof Expression
                     ? $resolved->getValue($this->builder->getGrammar()) // @phpstan-ignore-line
@@ -366,6 +371,116 @@ abstract class BaseCompiler
         }
 
         return new Expression($sql);
+    }
+
+    /**
+     * Parse a model-defined path expression.
+     *
+     * Returns null when the column is not a model-defined path.
+     *
+     * @param  string $column
+     * @return array{
+     *     path:string,
+     *     segments:array<int,string>,
+     *     descriptor:array<string,mixed>,
+     *     alias:?string
+     * }|null
+     */
+    protected function parseModelDefinedPathExpression(string $column): ?array
+    {
+        $parsed = $this->parseColumnParts($column);
+
+        if (! $this->builder->isModelDefinedPath($parsed['column'])) {
+            return null;
+        }
+
+        $described = $this->builder->describeModelDefinedPath($parsed['column']);
+
+        return [
+            'path'       => $described['path'],
+            'segments'   => $described['segments'],
+            'descriptor' => $described['descriptor'],
+            'alias'      => $parsed['alias'] ?? null,
+        ];
+    }
+
+    /**
+     * Compile a parsed model-defined path expression.
+     *
+     * @param  array{
+     *     path:string,
+     *     segments:array<int,string>,
+     *     descriptor:array<string,mixed>,
+     *     alias:?string
+     * } $modelPath
+     * @param  bool $allowAlias
+     * @return Expression
+     */
+    protected function compileModelDefinedPath(array $modelPath, bool $allowAlias = false): Expression
+    {
+        $descriptor = $modelPath['descriptor'];
+        $type       = $descriptor['type'] ?? null;
+        $alias      = $allowAlias ? ($modelPath['alias'] ?? null) : null;
+
+        return match ($type) {
+            'path' => $this->compileModelPathDescriptor($descriptor, $alias),
+            default => throw new \RuntimeException(sprintf(
+                'Unsupported model-defined descriptor type [%s] for path [%s].',
+                (string) $type,
+                $modelPath['path']
+            )),
+        };
+    }
+
+    /**
+     * Compile a model-defined path descriptor of type `path`.
+     *
+     * @param  array<string,mixed> $descriptor
+     * @param  string|null         $alias
+     * @return Expression
+     */
+    protected function compileModelPathDescriptor(array $descriptor, ?string $alias = null): Expression
+    {
+        $path = $descriptor['path'] ?? null;
+
+        if (! is_string($path) || $path === '') {
+            throw new \RuntimeException(
+                'Model-defined path descriptor must define a non-empty [path].'
+            );
+        }
+
+        return $this->builder->resolveColumnExpression($path, $alias);
+    }
+
+    /**
+     * Resolve a column expression for compiler use.
+     *
+     * This wrapper allows the compiler to intercept special expression
+     * types, such as model-defined paths, before delegating normal
+     * resolution to the AutoJoinQueryBuilder.
+     *
+     * @param  string       $column
+     * @param  string|null  $alias
+     * @param  bool         $allowAutoAliasing
+     * @return Expression
+     */
+    protected function resolveColumnExpression(
+        string $column,
+        ?string $alias = null,
+        bool $allowAutoAliasing = true
+    ): Expression {
+        if ($modelPath = $this->parseModelDefinedPathExpression($column)) {
+            return $this->compileModelDefinedPath(
+                $modelPath,
+                $allowAutoAliasing
+            );
+        }
+
+        return $this->builder->resolveColumnExpression(
+            $column,
+            $alias,
+            $allowAutoAliasing
+        );
     }
 
     /**
