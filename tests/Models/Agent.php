@@ -1,8 +1,9 @@
 <?php
+
 namespace protich\AutoJoinEloquent\Tests\Models;
 
-use protich\AutoJoinEloquent\Tests\Traits\AutoJoinTestTrait;
 use Illuminate\Database\Eloquent\Model;
+use protich\AutoJoinEloquent\Tests\Traits\AutoJoinTestTrait;
 
 class Agent extends Model
 {
@@ -10,10 +11,29 @@ class Agent extends Model
 
     protected $table = 'agents';
 
-    protected $fillable = ['user_id', 'position'];
+    protected $fillable = ['user_id', 'position', 'flags'];
+
+    /**
+     * Describe a model-defined auto-join path.
+     *
+     * @param  string            $path
+     * @param  array<int,string> $segments
+     * @return array<string,mixed>
+     */
+    public static function describeAutoJoinPath(string $path, array $segments): array
+    {
+        return match ($path) {
+            'status' => [
+                'type' => 'path',
+                'path' => 'flags',
+            ],
+            default => parent::describeAutoJoinPath($path, $segments),
+        };
+    }
 
     /**
      * An agent belongs to a user.
+     *
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function user()
@@ -22,20 +42,17 @@ class Agent extends Model
     }
 
     /**
-     * An agent belongs to many departments (via the pivot table).
+     * An agent belongs to many departments via the pivot table.
+     *
      * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
      */
     public function departments()
     {
-        return $this->belongsToMany(Department::class, 'agent_department', 'agent_id', 'department_id')
-                    ->withPivot('assigned_at');
+        return $this->belongsToMany(
+            Department::class,
+            'agent_department',
+            'agent_id',
+            'department_id'
+        )->withPivot('assigned_at');
     }
-
-    /**
-     * An agent may have many tickets assigned.
-     */
-    // public function tickets()
-    // {
-    //     return $this->hasMany(Ticket::class, 'agent_id');
-    // }
 }
