@@ -94,6 +94,13 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     protected $baseModel;
 
     /**
+     * Map normalized select expressions to their resolved aliases.
+     *
+     * @var array<string,string>
+     */
+    protected array $selectAliases = [];
+
+    /**
      * Constructor.
      *
      * Initializes the AutoJoinQueryBuilder and creates a new JoinAliasManager.
@@ -151,6 +158,29 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     public function getDefaultJoinType(): string
     {
         return $this->defaultJoinType ?: 'left';
+    }
+
+    /**
+     * Register an alias for a select expression.
+     *
+     * @param  string $expression Normalized select expression
+     * @param  string $alias      Resolved alias for the expression
+     * @return void
+     */
+    public function registerSelectAlias(string $expression, string $alias): void
+    {
+        $this->selectAliases[$expression] = $alias;
+    }
+
+    /**
+     * Get the registered alias for a select expression.
+     *
+     * @param  string $expression Normalized select expression
+     * @return string|null
+     */
+    public function getSelectAlias(string $expression): ?string
+    {
+        return $this->selectAliases[$expression] ?? null;
     }
 
     /**
@@ -259,6 +289,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     {
         return $this->getAliasManager()->resolveModelAlias($model, $relationshipChain, $default);
     }
+
     /**
      * Normalize a parsed SQL identifier alias.
      *
@@ -335,7 +366,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * @param  bool   $normalizeAlias
      * @return string|null
      */
-    protected function parseAlias(
+    public function parseAlias(
         string $expression,
         bool $normalizeAlias = true
     ): ?string {
