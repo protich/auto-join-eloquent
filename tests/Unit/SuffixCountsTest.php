@@ -5,8 +5,19 @@ namespace protich\AutoJoinEloquent\Tests\Unit;
 use protich\AutoJoinEloquent\Tests\AutoJoinTestCase;
 use protich\AutoJoinEloquent\Tests\Models\User;
 
+/**
+ * Test: SuffixCountsTest
+ *
+ * Verify suffix-based count aggregates compile and execute correctly
+ * across select, order, and having clauses.
+ */
 class SuffixCountsTest extends AutoJoinTestCase
 {
+    /**
+     * Ensure suffix-based count aggregates compile in select clauses.
+     *
+     * @return void
+     */
     public function test_select_with_counts_suffix(): void
     {
         $query = User::query()
@@ -25,6 +36,11 @@ class SuffixCountsTest extends AutoJoinTestCase
         $this->assertNonEmptyResults($query->get()->toArray());
     }
 
+    /**
+     * Ensure suffix-based count aggregates compile in order by clauses.
+     *
+     * @return void
+     */
     public function test_order_by_with_counts_suffix(): void
     {
         $query = User::query()
@@ -43,6 +59,11 @@ class SuffixCountsTest extends AutoJoinTestCase
         $this->assertNonEmptyResults($query->get()->toArray());
     }
 
+    /**
+     * Ensure suffix-based count aggregates compile in having clauses.
+     *
+     * @return void
+     */
     public function test_having_with_counts_suffix(): void
     {
         $query = User::query()
@@ -52,7 +73,6 @@ class SuffixCountsTest extends AutoJoinTestCase
             ])
             ->groupBy('agent.id')
             ->having('agent__departments.id__count', '>', 0); // @phpstan-ignore-line
-
 
         $sql = $this->debugSql($query);
 
