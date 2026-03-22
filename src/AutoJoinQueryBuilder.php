@@ -2,7 +2,8 @@
 
 namespace protich\AutoJoinEloquent;
 
-use protich\AutoJoinEloquent\Compilers\QueryCompiler;
+use protich\AutoJoinEloquent\Compilers\{QueryCompiler,
+    SubqueryQueryCompiler};
 use protich\AutoJoinEloquent\Join\JoinContext;
 use protich\AutoJoinEloquent\Join\JoinClauseInfo;
 use protich\AutoJoinEloquent\Join\JoinAliasManager;
@@ -70,6 +71,16 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * @var JoinAliasManager
      */
     protected JoinAliasManager $aliasManager;
+
+    /**
+     * Counter used to generate unique subquery alias prefixes.
+     *
+     * Each subquery receives a deterministic prefix (e.g. S1, S2, ...)
+     * to avoid alias collisions across nested or multiple subqueries.
+     *
+     * @var int
+     */
+    protected int $subqueryCounter = 0;
 
     /**
      * The base model for the query builder.
@@ -140,6 +151,26 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     public function getDefaultJoinType(): string
     {
         return $this->defaultJoinType ?: 'left';
+    }
+
+    /**
+     * Generate the next subquery alias prefix.
+     *
+     * Prefixes are sequential and deterministic to ensure stable SQL output
+     * for debugging and testing.
+     *
+     * Examples:
+     * - S1
+     * - S2
+     * - S3
+     *
+     * @return string
+     */
+    public function nextSubqueryPrefix(): string
+    {
+        $this->subqueryCounter++;
+
+        return 'S' . $this->subqueryCounter;
     }
 
     /**
@@ -228,43 +259,88 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     {
         return $this->getAliasManager()->resolveModelAlias($model, $relationshipChain, $default);
     }
+    /**
+     * Normalize a parsed SQL identifier alias.
+     *
+     * This method uses the active grammar to infer identifier wrapping
+     * characters and removes them when the alias is wrapped exactly
+     * that way.
+     *
+     * @param  string $alias
+     * @return string
+     */
+    protected function normalizeIdentifierAlias(string $alias): string
+    {
+        $alias    = trim($alias);
+        $sentinel = 'AliasToken';
+        $wrapped  = $this->getGrammar()->wrap($sentinel);
+        $position = strpos($wrapped, $sentinel);
+
+        if ($position === false) {
+            return $alias;
+        }
+
+        $left  = substr($wrapped, 0, $position);
+        $right = substr($wrapped, $position + strlen($sentinel));
+
+        if ($left !== '' && str_starts_with($alias, $left)) {
+            $alias = substr($alias, strlen($left));
+        }
+
+        if ($right !== '' && str_ends_with($alias, $right)) {
+            $alias = substr($alias, 0, -strlen($right));
+        }
+
+        return $alias;
+    }
 
     /**
      * Extract the base expression and alias from a raw expression.
      *
-     * This method checks if the input contains an alias (using the "as" keyword).
-     * If an alias is present, it returns an array with the base expression (without the alias)
-     * and the alias. Otherwise, it returns the original expression and a null alias.
+     * This method checks if the input contains an alias using the `as`
+     * keyword. If an alias is present, it returns an array with the base
+     * expression and alias. Otherwise, it returns the original expression
+     * and a null alias.
      *
-     * @param string $expression The raw expression (e.g., "users as u" or "users").
+     * @param  string $expression
+     * @param  bool   $normalizeAlias
      * @return array{expression: string, alias: ?string}
      */
-    protected function parseAliasClause(string $expression): array
-    {
-        $alias = null;
+    protected function parseAliasClause(
+        string $expression,
+        bool $normalizeAlias = true
+    ): array {
+        $alias      = null;
         $expression = trim($expression);
+
         if (preg_match('/^(.*?)\s+as\s+(.*?)$/i', $expression, $matches)) {
             $expression = trim($matches[1]);
-            $alias = trim($matches[2]);
+            $alias      = trim($matches[2]);
+
+            if ($alias !== '' && $normalizeAlias) {
+                $alias = $this->normalizeIdentifierAlias($alias);
+            }
         }
+
         return [
             'expression' => $expression,
-            'alias' => $alias,
+            'alias'      => $alias !== '' ? $alias : null,
         ];
     }
 
     /**
      * Extract and return only the alias from a raw expression.
      *
-     * This method delegates to parseAliasClause() and returns the alias if available,
-     * otherwise it returns null.
-     *
-     * @param string $expression The raw expression.
+     * @param  string $expression
+     * @param  bool   $normalizeAlias
      * @return string|null
      */
-    protected function parseAlias(string $expression): ?string
-    {
-        $parsed = $this->parseAliasClause($expression);
+    protected function parseAlias(
+        string $expression,
+        bool $normalizeAlias = true
+    ): ?string {
+        $parsed = $this->parseAliasClause($expression, $normalizeAlias);
+
         return $parsed['alias'] ?? null;
     }
 
@@ -923,38 +999,52 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     /**
      * Apply auto-join transformations to the given query.
      *
-     * This method checks if the query's FROM clause already contains an alias using
-     * parseAliasClause(). If an alias is found, it sets the base alias (and updates the
-     * relation alias map using the parsed expression as the key). Then it rewrites the
-     * FROM clause to enforce the base alias and delegates further query compilation to QueryCompiler.
+     * This method checks if the query's FROM clause already contains an alias
+     * using parseAlias(). If an alias is found, it sets the base alias.
+     * It then rewrites the FROM clause to enforce the base alias and delegates
+     * further query compilation to the provided query compiler class.
      *
-     * @param \Illuminate\Database\Query\Builder $query The query builder instance to transform.
+     * @param  Query                          $query
+     * @param  class-string<QueryCompiler>|null $queryCompilerClass
      * @return void
      */
-    public function autoJoinQuery(Query $query): void
-    {
+    public function autoJoinQuery(
+        Query $query,
+        ?string $queryCompilerClass = null
+    ): void {
         $grammar = $this->getGrammar();
-        $from = $query->from;
+        $from    = $query->from;
 
-        // If the FROM clause is a string and contains an alias, extract
-        // alias and table info.
-        $info = $this->parseAliasClause($from);
-        if ($info['alias'] !== null) {
-            // NOTE: If the table part (i.e. $info['expression']) is customized,
-            // it may result in invalid aliasing. To avoid inconsistencies, we
-            // always use the model's table as the key for the base alias.
-            $this->setBaseAlias($info['alias']);
+        $alias = $this->parseAlias($from);
+
+        if ($alias !== null) {
+            $this->setBaseAlias($alias);
         }
 
-        // Rewrite the FROM clause with the base alias.
         $query->from = new Expression(sprintf(
             '%s as %s',
             $grammar->wrapTable($this->getBaseTable()),
             $grammar->wrap($this->getBaseAlias())
         ));
 
-        // Delegate further query compilation to QueryCompiler.
-        QueryCompiler::compile($this, $query);
+        $queryCompilerClass ??= QueryCompiler::class;
+
+        if (!class_exists($queryCompilerClass)) {
+            throw new \RuntimeException(sprintf(
+                'Query compiler class [%s] does not exist.',
+                $queryCompilerClass
+            ));
+        }
+
+        if (!is_a($queryCompilerClass, QueryCompiler::class, true)) {
+            throw new \RuntimeException(sprintf(
+                'Query compiler class [%s] must extend %s.',
+                $queryCompilerClass,
+                QueryCompiler::class
+            ));
+        }
+
+        $queryCompilerClass::compile($this, $query);
     }
 
     /**
