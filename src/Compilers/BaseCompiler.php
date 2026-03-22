@@ -3,6 +3,10 @@
 namespace protich\AutoJoinEloquent\Compilers;
 
 use protich\AutoJoinEloquent\AutoJoinQueryBuilder;
+use protich\AutoJoinEloquent\Support\Descriptor;
+use protich\AutoJoinEloquent\Support\CompiledExpression;
+use protich\AutoJoinEloquent\Support\SubQueryExpression;
+
 use Illuminate\Database\Query\Expression;
 
 /**
@@ -25,39 +29,55 @@ abstract class BaseCompiler
     }
 
     /**
-     * Compile an array of clause entries (e.g. columns, orders, havings).
+     * Compile an array of clause entries.
      *
-     * Handles string inputs, structured arrays, and Expression objects.
+     * Handles:
+     * - scalar string expressions
+     * - structured clause arrays
+     * - raw Expression objects
+     * - SubQueryExpression instances, which are treated as already compiled
      *
-     * @param array $clauses
-     * @return array
+     * @param  array<int|string,mixed> $clauses
+     * @return array<int|string,mixed>
      */
     // @phpstan-ignore-next-line
     public function compileClause(array $clauses): array
     {
         return collect($clauses)->map(function (string|array|Expression $clause) {
-            // Unwrap Expression to raw SQL string
+            // Leave compiled expressions untouched.
+            if ($clause instanceof CompiledExpression) {
+                return $clause;
+            }
+
+            // Unwrap generic Expression objects to raw SQL.
             if ($clause instanceof Expression) {
                 $clause = $clause->getValue($this->builder->getGrammar()); // @phpstan-ignore-line
             }
 
-            // Handle scalar column (e.g., 'user.id')
+            // Compile scalar column expressions (e.g. "user.id").
             if (is_string($clause)) {
                 return $this->compileColumn($clause);
             }
 
-            // Structured clause: column or raw SQL
+            // Compile structured clause arrays.
             if (is_array($clause)) {
                 // ['column' => 'user.id__count']
                 if (isset($clause['column'])) {
                     $compiled = $this->compileColumn((string) $clause['column']); // @phpstan-ignore-line
-                    $clause['column'] = $compiled instanceof Expression ? $compiled : (string) $compiled; // @phpstan-ignore-line
+                    $clause['column'] = $compiled instanceof Expression
+                        ? $compiled
+                        : (string) $compiled; // @phpstan-ignore-line
+
                     return $clause;
                 }
 
                 // ['type' => 'Raw', 'sql' => 'COUNT(...) > 5']
-                if (isset($clause['sql']) && strcasecmp((string) ($clause['type'] ?? ''), 'Raw') === 0) { // @phpstan-ignore-line
+                if (
+                    isset($clause['sql'])
+                    && strcasecmp((string) ($clause['type'] ?? ''), 'Raw') === 0
+                ) {
                     $clause['sql'] = $this->compileRawSql((string) $clause['sql']); // @phpstan-ignore-line
+
                     return $clause;
                 }
             }
@@ -82,16 +102,18 @@ abstract class BaseCompiler
      */
     public function compileColumn(string $column, bool $allowAlias = false): Expression
     {
+        if ($modelPath = $this->parseModelDefinedPathExpression($column)) {
+            return $this->compileModelDefinedPath($modelPath, $allowAlias);
+        }
+
         if ($aggregate = $this->parseAggregateExpression($column)) {
             return $this->compileAggregateExpression($aggregate, $allowAlias);
         }
 
         if ($coalesce = $this->parseCoalesceExpression($column)) {
-            return new Expression($this->compileCoalesce($coalesce));
-        }
-
-        if ($modelPath = $this->parseModelDefinedPathExpression($column)) {
-            return $this->compileModelDefinedPath($modelPath, $allowAlias);
+            return $this->makeCompiledExpression(
+                $this->compileCoalesce($coalesce)
+            );
         }
 
         $parsed = $this->parseColumnParts($column);
@@ -256,47 +278,62 @@ abstract class BaseCompiler
     /**
      * Compile an aggregate clause (COUNT, SUM, etc.).
      *
-     * @param array{aggregateFunction: string, innerExpression: string, alias: string|null, outerExpression: string} $info
+     * @param  array{
+     *     aggregateFunction: string,
+     *     innerExpression: string,
+     *     alias: string|null,
+     *     outerExpression: string,
+     *     distinct?: bool
+     * } $info
      * @return string
      */
     protected function compileAggregate(array $info): string
     {
         $expr = $this->compileAggregateExpression($info, false);
-        // @phpstan-ignore-next-line
-        $sql = $expr->getValue($this->builder->getGrammar());
 
-        if (!empty($info['outerExpression'])) {
-            $sql .= ' ' . (string) $info['outerExpression']; // @phpstan-ignore-line
+        $sql = $expr->getValue($this->builder->getGrammar()); // @phpstan-ignore-line
+
+        if (! empty($info['outerExpression'])) {
+            $sql .= ' ' . (string) $info['outerExpression'];
         }
 
-        return $sql; // @phpstan-ignore-line
+        return $sql;
     }
 
     /**
      * Compile an aggregate expression into a wrapped Expression.
      *
-     * @param array{aggregateFunction: string, innerExpression: string, alias: string|null} $info
+     * @param array{
+     *     aggregateFunction: string,
+     *     innerExpression: string,
+     *     alias: string|null,
+     *     distinct?: bool
+     * } $info
      * @param bool $useDefaultAlias
      * @return Expression
      */
     protected function compileAggregateExpression(array $info, bool $useDefaultAlias = false): Expression
     {
-        $grammar = $this->builder->getGrammar();
-        $parsed = $this->parseColumnParts($info['innerExpression']);
-        $resolved = $this->builder->resolveColumnExpression($parsed['column'], null, false);
+        $grammar  = $this->builder->getGrammar();
+        $parsed   = $this->parseColumnParts($info['innerExpression']);
+        $resolved = $this->resolveColumnExpression($parsed['column'], null, false);
 
         $innerSql = $resolved->getValue($grammar); // @phpstan-ignore-line
+        $distinct = (bool) ($info['distinct'] ?? false);
 
         $alias = $info['alias']
-            ?? ($useDefaultAlias ? $info['aggregateFunction'] . '_' . preg_replace('/[^a-zA-Z0-9_]/', '', $innerSql) : null); // @phpstan-ignore-line
+            ?? ($useDefaultAlias
+                ? $this->makeAggregateAlias($info['aggregateFunction'], $innerSql)
+                : null); // @phpstan-ignore-line
 
-        $sql = sprintf('%s(%s)', $info['aggregateFunction'], $innerSql); // @phpstan-ignore-line
+        $sql = sprintf(
+            '%s(%s%s)',
+            $info['aggregateFunction'],
+            $distinct ? 'DISTINCT ' : '',
+            $innerSql
+        ); // @phpstan-ignore-line
 
-        if ($alias !== null) {
-            $sql .= ' as ' . $grammar->wrap($alias);
-        }
-
-        return new Expression($sql);
+        return $this->makeCompiledExpression($sql, $alias);
     }
 
     /**
@@ -370,7 +407,7 @@ abstract class BaseCompiler
             $sql .= ' as ' . $grammar->wrap($info['alias']);
         }
 
-        return new Expression($sql);
+        return $this->makeCompiledExpression($sql);
     }
 
     /**
@@ -418,15 +455,18 @@ abstract class BaseCompiler
      */
     protected function compileModelDefinedPath(array $modelPath, bool $allowAlias = false): Expression
     {
-        $descriptor = $modelPath['descriptor'];
-        $type       = $descriptor['type'] ?? null;
-        $alias      = $allowAlias ? ($modelPath['alias'] ?? null) : null;
+        $descriptor = Descriptor::make(
+            $modelPath['descriptor'],
+            $modelPath['alias'] ?? null,
+            $allowAlias
+        );
 
-        return match ($type) {
-            'path' => $this->compileModelPathDescriptor($descriptor, $alias),
+        return match ($descriptor->type()) {
+            'path'  => $this->compileModelPathDescriptor($descriptor),
+            'count' => $this->compileModelCountDescriptor($descriptor),
             default => throw new \RuntimeException(sprintf(
                 'Unsupported model-defined descriptor type [%s] for path [%s].',
-                (string) $type,
+                $descriptor->type(),
                 $modelPath['path']
             )),
         };
@@ -435,21 +475,93 @@ abstract class BaseCompiler
     /**
      * Compile a model-defined path descriptor of type `path`.
      *
-     * @param  array<string,mixed> $descriptor
-     * @param  string|null         $alias
+     * @param  Descriptor $descriptor
      * @return Expression
      */
-    protected function compileModelPathDescriptor(array $descriptor, ?string $alias = null): Expression
+    protected function compileModelPathDescriptor(Descriptor $descriptor): Expression
     {
-        $path = $descriptor['path'] ?? null;
+        return $this->builder->resolveColumnExpression(
+            $descriptor->path(), // @phpstan-ignore-line
+            $descriptor->alias(),
+            $descriptor->allowsAlias()
+        );
+    }
 
-        if (! is_string($path) || $path === '') {
+    /**
+     * Compile a model path descriptor of type `count`.
+     *
+     * Single-path counts reuse the normal aggregate compiler. Multi-path
+     * counts are compiled through correlated subqueries and UNION.
+     *
+     * @param  Descriptor $descriptor
+     * @return Expression
+     */
+    protected function compileModelCountDescriptor(Descriptor $descriptor): Expression
+    {
+        $paths = $descriptor->paths();
+
+        if (count($paths) === 1) {
+            return $this->compileAggregateExpression([
+                'aggregateFunction' => 'COUNT',
+                'innerExpression'   => $paths[0],
+                'alias'             => $descriptor->alias(),
+                'outerExpression'   => '',
+                'distinct'          => $descriptor->distinct(),
+            ], $descriptor->shouldAutoAlias());
+        }
+
+        return $this->compileMultiPathCountDescriptor($descriptor);
+    }
+
+    /**
+     * Compile a multi-path count descriptor using correlated subqueries.
+     *
+     * Paths are compiled into correlated select subqueries and combined
+     * using UNION when distinct=true.
+     *
+     * @param  Descriptor $descriptor
+     * @return Expression
+     */
+    protected function compileMultiPathCountDescriptor(Descriptor $descriptor): Expression
+    {
+        if (! $descriptor->distinct()) {
             throw new \RuntimeException(
-                'Model-defined path descriptor must define a non-empty [path].'
+                'Multi-path count descriptors currently require [distinct => true].'
             );
         }
 
-        return $this->builder->resolveColumnExpression($path, $alias);
+        $paths   = $descriptor->paths();
+        $grammar = $this->builder->getGrammar();
+
+        $subqueries = array_map(
+            fn (string $path) => (new SubqueryCompiler($this->builder))
+                ->compilePathSelectSubquerySql($path),
+            $paths
+        );
+
+        $unionSql = implode("\nUNION\n", $subqueries);
+        $derivedAlias = SubqueryCompiler::makeSubqueryAlias('count', $paths);
+
+        $sql = sprintf(
+            '(select count(*) from (%s) as %s)',
+            $unionSql,
+            $derivedAlias
+        );
+
+        $alias = $descriptor->alias();
+
+        if ($alias === null && $descriptor->shouldAutoAlias()) {
+            $alias = $this->makeAggregateAlias(
+                'COUNT',
+                implode('_', $paths)
+            );
+        }
+
+        if ($alias !== null) {
+            $sql .= ' as ' . $grammar->wrap($alias);
+        }
+
+        return new SubQueryExpression($sql);
     }
 
     /**
@@ -470,6 +582,10 @@ abstract class BaseCompiler
         bool $allowAutoAliasing = true
     ): Expression {
         if ($modelPath = $this->parseModelDefinedPathExpression($column)) {
+            if ($alias !== null && empty($modelPath['alias'])) {
+                $modelPath['alias'] = $alias;
+            }
+
             return $this->compileModelDefinedPath(
                 $modelPath,
                 $allowAutoAliasing
@@ -531,5 +647,83 @@ abstract class BaseCompiler
         // Allow single-segment fields (e.g., flags), or dotted/underscored paths
         return true;
     }
+    /**
+     * Normalize a SQL expression and append an alias when provided.
+     *
+     * @param  string       $sql
+     * @param  string|null  $alias
+     * @return string
+     */
+    protected function normalizeSqlExpression(
+        string $sql,
+        ?string $alias = null
+    ): string {
+        if ($alias === null) {
+            return $sql;
+        }
 
+        return sprintf(
+            '%s as %s',
+            $sql,
+            $this->builder->getGrammar()->wrap($alias)
+        );
+    }
+
+    /**
+     * Create a non-final SQL expression.
+     *
+     * @param  string       $sql
+     * @param  string|null  $alias
+     * @return Expression
+     */
+    protected function makeExpression(
+        string $sql,
+        ?string $alias = null
+    ): Expression {
+        return new Expression(
+            $this->normalizeSqlExpression($sql, $alias)
+        );
+    }
+
+    /**
+     * Create a final compiled SQL expression.
+     *
+     * @param  string       $sql
+     * @param  string|null  $alias
+     * @return CompiledExpression
+     */
+    protected function makeCompiledExpression(
+        string $sql,
+        ?string $alias = null
+    ): CompiledExpression {
+        return new CompiledExpression(
+            $this->normalizeSqlExpression($sql, $alias)
+        );
+    }
+
+    /**
+     * Generate a deterministic alias for an aggregate expression.
+     *
+     * The alias is built using the aggregate function name and a sanitized
+     * representation of the expression.
+     *
+     * Example:
+     * - makeAggregateAlias('COUNT', 'departments.id')
+     *   => COUNT_departmentsid
+     *
+     * - makeAggregateAlias('COUNT', 'departments.id_groups.departments.id')
+     *   => COUNT_departmentsid_groupsdepartmentsid
+     *
+     * @param  string $function
+     * @param  string $expression
+     * @return string
+     */
+    protected function makeAggregateAlias(string $function, string $expression): string
+    {
+        return sprintf(
+            '%s_%s',
+            strtoupper($function),
+            preg_replace('/[^a-zA-Z0-9_]/', '', $expression)
+        );
+    }
 }
