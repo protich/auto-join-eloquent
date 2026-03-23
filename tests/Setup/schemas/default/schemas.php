@@ -8,6 +8,9 @@ return [
         'users',
         'agents',
         'departments',
+        'groups',
         'agent_department',
+        'agent_groups',
+        'group_departments',
     ],
 ];

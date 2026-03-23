@@ -28,6 +28,16 @@ class JoinAliasManager
     protected bool $useSimpleAliases = false;
 
     /**
+     * Prefix applied to generated simple aliases.
+     *
+     * This is primarily used to isolate alias namespaces for subqueries
+     * so inner builders do not collide with outer query aliases.
+     *
+     * @var string
+     */
+    protected string $aliasPrefix = '';
+
+    /**
      * Constructor.
      *
      * @param bool $useSimpleAliases Whether to use simple sequential aliases.
@@ -49,6 +59,42 @@ class JoinAliasManager
     }
 
     /**
+     * Determine whether simple aliases are enabled.
+     *
+     * @return bool
+     */
+    public function getUseSimpleAliases(): bool
+    {
+        return $this->useSimpleAliases;
+    }
+
+    /**
+     * Set the prefix applied to generated simple aliases.
+     *
+     * @param  string $prefix
+     * @return void
+     */
+    public function setAliasPrefix(string $prefix): void
+    {
+        $this->aliasPrefix = $prefix;
+    }
+
+    /**
+     * Get the prefix applied to generated simple aliases.
+     *
+     * @return string
+     */
+    public function getAliasPrefix(): string
+    {
+        return $this->aliasPrefix;
+    }
+
+
+    public function getAliasMap() {
+        return $this->aliasMap;
+    }
+
+    /**
      * Get or resolve the alias for a given key.
      *
      * This method checks if an alias is already mapped for the provided key.
@@ -63,23 +109,27 @@ class JoinAliasManager
      */
     public function getAlias(string $key, ?string $default = null): string
     {
-        if (!isset($this->aliasMap[$key])) {
+        if (! isset($this->aliasMap[$key])) {
             if ($this->useSimpleAliases) {
                 do {
                     if ($this->aliasCounter < 26) {
-                        $alias = chr(65 + $this->aliasCounter);
+                        $baseAlias = chr(65 + $this->aliasCounter);
                     } else {
                         $letter = chr(65 + ($this->aliasCounter % 26));
                         $number = intdiv($this->aliasCounter, 26);
-                        $alias = $letter . $number;
+                        $baseAlias = $letter . $number;
                     }
+
+                    $alias = $this->aliasPrefix . $baseAlias;
                     $this->aliasCounter++;
                 } while (in_array($alias, $this->aliasMap, true));
+
                 $this->aliasMap[$key] = $alias;
             } else {
                 $this->aliasMap[$key] = $default ?? $key;
             }
         }
+
         return $this->aliasMap[$key];
     }
 
