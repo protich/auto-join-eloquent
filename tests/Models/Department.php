@@ -15,7 +15,7 @@ class Department extends Model
 
     /**
      * A department's manager is an agent.
-     * 
+     *
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function manager()
@@ -25,13 +25,28 @@ class Department extends Model
 
     /**
      * A department belongs to many agents (via the pivot table).
-     * 
+     *
      * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
      */
     public function agents()
     {
         return $this->belongsToMany(Agent::class, 'agent_department', 'department_id', 'agent_id')
                     ->withPivot('assigned_at');
+    }
+
+    /**
+     * Get the groups assigned to this department.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     */
+    public function groups()
+    {
+        return $this->belongsToMany(
+            Group::class,
+            'group_departments',
+            'department_id',
+            'group_id'
+        );
     }
 
     /**

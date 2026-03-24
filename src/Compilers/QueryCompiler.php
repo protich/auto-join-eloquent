@@ -34,12 +34,11 @@ class QueryCompiler
     /**
      * Compile the full query using clause-specific compilers.
      *
-     * @param Builder $query
+     * @param  Builder $query
      * @return Builder
      */
     protected function compileQuery(Builder $query): Builder
     {
-        // Mapping of clause keys to compiler class + whether the input is scalar
         $clauseMap = [
             'columns' => SelectCompiler::class,
             'wheres'  => WhereCompiler::class,
@@ -56,10 +55,27 @@ class QueryCompiler
             }
 
             $compiler = new $compilerClass($this->builder);
-            $query->{$clauseKey} =  $compiler->compileClause($clauses);
+            $compiled = $compiler->compileClause($clauses);
+
+            $query->{$clauseKey} = $this->normalizeCompiledClause(
+                $clauseKey,
+                $compiled
+            );
         }
 
         return $query;
+    }
+
+    /**
+     * Normalize compiled clause entries.
+     *
+     * @param  string                   $clauseKey
+     * @param  array<int|string,mixed>  $clauses
+     * @return array<int|string,mixed>
+     */
+    protected function normalizeCompiledClause(string $clauseKey, array $clauses): array
+    {
+        return $clauses;
     }
 
     /**
@@ -71,6 +87,6 @@ class QueryCompiler
      */
     public static function compile(AutoJoinQueryBuilder $builder, Builder $query): Builder
     {
-        return (new self($builder))->compileQuery($query);
+        return (new static($builder))->compileQuery($query);
     }
 }
