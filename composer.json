@@ -2,7 +2,7 @@
   "name": "protich/auto-join-eloquent",
   "description": "Extend Eloquent to support auto-joining relationships and aliasing for SELECT, WHERE, ORDERBY, GROUPBY and HAVING clauses",
   "type": "library",
-  "version": "0.9.8",
+  "version": "0.9.9",
   "license": "MIT",
   "authors": [
     {
