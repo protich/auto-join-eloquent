@@ -186,16 +186,38 @@ abstract class BaseCompiler
         }
 
         // Normalize dot notation (user.agent.id → user__agent.id)
-        $parts = explode('.', $column);
-        if (count($parts) > 1) {
-            $field = array_pop($parts);
-            $column = implode('__', $parts) . '.' . $field;
-        }
+        $column = $this->normalizeColumn($column);
 
         return [
             'column' => $column,
             'alias'  => $alias,
         ];
+    }
+
+    /**
+     * Normalize a column expression to relationship-chain form.
+     *
+     * Converts dot notation into auto-join format:
+     * - user.agent.id → user__agent.id
+     *
+     * Does not parse or extract alias.
+     *
+     * @param  string $column
+     * @return string
+     */
+    protected function normalizeColumn(string $column): string
+    {
+        $column = trim($column);
+
+        $parts = explode('.', $column);
+
+        if (count($parts) > 1) {
+            $field = array_pop($parts);
+
+            return implode('__', $parts) . '.' . $field;
+        }
+
+        return $column;
     }
 
     /**
@@ -514,15 +536,102 @@ abstract class BaseCompiler
     }
 
     /**
-     * Compile a multi-path count descriptor using correlated subqueries.
+     * Compile a multi-path count descriptor.
      *
-     * Paths are compiled into correlated select subqueries and combined
-     * using UNION when distinct=true.
+     * Distinct multi-path counts that terminate on the same target are
+     * compiled using an EXISTS-based strategy. All other multi-path counts
+     * fall back to the UNION-based strategy.
      *
      * @param  Descriptor $descriptor
      * @return Expression
      */
     protected function compileMultiPathCountDescriptor(Descriptor $descriptor): Expression
+    {
+        if (! $descriptor->distinct()) {
+            throw new \RuntimeException(
+                'Multi-path count descriptors currently require [distinct => true].'
+            );
+        }
+
+        $paths = $descriptor->paths();
+
+        if ($this->canCompileExistsCountDescriptor($paths)) {
+            return $this->compileExistsCountDescriptor($descriptor);
+        }
+
+        return $this->compileUnionCountDescriptor($descriptor);
+    }
+
+    /**
+     * Compile a multi-path count descriptor using a target-anchored
+     * EXISTS strategy.
+     *
+     * This strategy is used when all paths terminate on the same target
+     * relation and column. The target table becomes the driving table,
+     * and each path is compiled into an EXISTS predicate correlated to:
+     *
+     * - the outer record
+     * - the current target row
+     *
+     * Example shape:
+     *
+     *   select count(*)
+     *   from target t
+     *   where exists(path1 for outer row -> t)
+     *      or exists(path2 for outer row -> t)
+     *
+     * This avoids UNION-based correlated derived tables and is compatible
+     * with MySQL correlation rules.
+     *
+     * @param  Descriptor $descriptor
+     * @return Expression
+     */
+    protected function compileExistsCountDescriptor(Descriptor $descriptor): Expression
+    {
+        if (! $descriptor->distinct()) {
+            throw new \RuntimeException(
+                'EXISTS-based count descriptors currently require [distinct => true].'
+            );
+        }
+
+        $paths    = $descriptor->paths();
+        $grammar  = $this->builder->getGrammar();
+        $compiler = new SubqueryCompiler($this->builder);
+
+        $sql = $compiler->compileExistsCountSubquerySql($paths);
+
+        $alias = $descriptor->alias();
+
+        if ($alias === null && $descriptor->shouldAutoAlias()) {
+            $alias = $this->makeAggregateAlias(
+                'COUNT',
+                implode('_', $paths)
+            );
+        }
+
+        if ($alias !== null) {
+            $sql .= ' as ' . $grammar->wrap($alias);
+        }
+
+        return new SubQueryExpression($sql);
+    }
+
+    /**
+     * Compile a multi-path count descriptor using a UNION subquery.
+     *
+     * Each path is compiled into a correlated select subquery that
+     * returns the terminal value for that path. The resulting subqueries
+     * are combined with UNION and counted by an outer scalar subquery.
+     *
+     * This strategy is retained as a generic fallback for multi-path
+     * distinct counts. More specialized strategies, such as EXISTS-based
+     * target counting, may be used by callers when the descriptor shape
+     * allows a more efficient compilation path.
+     *
+     * @param  Descriptor $descriptor
+     * @return Expression
+     */
+    protected function compileUnionCountDescriptor(Descriptor $descriptor): Expression
     {
         if (! $descriptor->distinct()) {
             throw new \RuntimeException(
@@ -539,7 +648,7 @@ abstract class BaseCompiler
             $paths
         );
 
-        $unionSql = implode("\nUNION\n", $subqueries);
+        $unionSql     = implode("\nUNION\n", $subqueries);
         $derivedAlias = SubqueryCompiler::makeSubqueryAlias('count', $paths);
 
         $sql = sprintf(
@@ -725,5 +834,57 @@ abstract class BaseCompiler
             strtoupper($function),
             preg_replace('/[^a-zA-Z0-9_]/', '', $expression)
         );
+    }
+
+    /**
+     * Determine whether a multi-path count descriptor can be compiled
+     * using an EXISTS-based strategy.
+     *
+     * The EXISTS strategy is applicable when all paths terminate on the
+     * same target relation and column (e.g. departments.id). In such cases,
+     * the count can be expressed as:
+     *
+     *   count(*) from target where exists(path1) or exists(path2)
+     *
+     * This avoids UNION-based derived tables and is compatible with MySQL
+     * correlation rules.
+     *
+     * @param  array<int,string> $paths
+     * @return bool
+     */
+    protected function canCompileExistsCountDescriptor(array $paths): bool
+    {
+        if (count($paths) < 2) {
+            return false;
+        }
+
+        $terminal = null;
+
+        foreach ($paths as $path) {
+            $path = trim($path);
+
+            if ($path === '' || ! str_contains($path, '.')) {
+                return false;
+            }
+
+            $parts  = explode('.', $path);
+            $column = array_pop($parts);
+            $target = array_pop($parts);
+
+            if ($column === null || $column === '' || $target === null || $target === '') {
+                return false;
+            }
+
+            if ($terminal === null) {
+                $terminal = [$target, $column];
+                continue;
+            }
+
+            if ($terminal[0] !== $target || $terminal[1] !== $column) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
