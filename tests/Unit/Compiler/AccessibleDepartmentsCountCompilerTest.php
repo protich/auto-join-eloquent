@@ -8,13 +8,13 @@ use protich\AutoJoinEloquent\Tests\Models\Agent;
 /**
  * Test: AccessibleDepartmentsCountCompilerTest
  *
- * Verify accessibleDepartments count compiles through the multi-path
- * subquery pipeline and returns a positive integer result.
+ * Verify accessibleDepartments count compiles through the EXISTS-based
+ * multi-path pipeline and returns a positive integer result.
  */
 class AccessibleDepartmentsCountCompilerTest extends AutoJoinTestCase
 {
     /**
-     * Test accessibleDepartments count compiles using UNION and executes.
+     * Test accessibleDepartments count compiles using EXISTS and executes.
      *
      * @return void
      */
@@ -30,8 +30,9 @@ class AccessibleDepartmentsCountCompilerTest extends AutoJoinTestCase
         $sql = $this->debugSql($query);
         $sqlLower = strtolower($sql);
 
-        $this->assertStringContainsString('union', $sqlLower);
-        $this->assertStringContainsString('subquery_count_', $sqlLower);
+        $this->assertStringContainsString('select count(*)', $sqlLower);
+        $this->assertStringContainsString('exists', $sqlLower);
+        $this->assertStringNotContainsString('union', $sqlLower);
 
         $row = $query->first();
 
