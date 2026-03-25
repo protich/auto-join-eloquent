@@ -90,6 +90,22 @@ class SubqueryCompiler extends BaseCompiler
     }
 
     /**
+     * Describe a normalized path chain for EXISTS compilation.
+     *
+     * @param  string $path
+     * @return array{
+     *     chain: array<int, array{relation: string, join: string}>,
+     *     field: string|null,
+     *     alias: string|null
+     * }
+     */
+    protected function describePathChain(string $path): array
+    {
+        return $this->outerBuilder->describeColumnChain($path, null, false);
+    }
+
+
+    /**
      * Build a correlated inner query for a single path.
      *
      * The returned query selects the terminal value for the provided path
@@ -166,6 +182,215 @@ class SubqueryCompiler extends BaseCompiler
     public function compilePathSelectSubquerySql(string $path): string
     {
         return $this->buildPathSelectSubquery($path)->toSql();
+    }
+
+    /**
+     * Compile a target-anchored EXISTS count subquery.
+     *
+     * All paths must terminate on the same target relation and field.
+     * The target model becomes the driving table and each path is
+     * compiled into an EXISTS predicate correlated to:
+     *
+     * - the outer record
+     * - the current target row
+     *
+     * Example shape:
+     *
+     *   (
+     *     select count(*)
+     *     from target as T
+     *     where exists(path1 for outer row -> T)
+     *        or exists(path2 for outer row -> T)
+     *   )
+     *
+     * @param  array<int,string> $paths
+     * @return string
+     */
+    public function compileExistsCountSubquerySql(array $paths): string
+    {
+        if ($paths === []) {
+            throw new RuntimeException(
+                'EXISTS count subquery requires at least one path.'
+            );
+        }
+
+        $grammar = $this->builder->getGrammar();
+        $target  = $this->resolveExistsCountTarget($paths);
+        $model   = $this->resolveExistsCountTargetModel($target['chain']);
+        $alias   = $this->outerBuilder->nextSubqueryPrefix() . 'T';
+
+        $predicates = array_map(
+            fn (string $path) => $this->compilePathExistsPredicateSql(
+                $path,
+                $alias,
+                $target['field']
+            ),
+            $paths
+        );
+
+        return sprintf(
+            '(select count(*) from %s as %s where %s)',
+            $grammar->wrapTable($model->getTable()),
+            $grammar->wrap($alias),
+            implode("\nor\n", $predicates)
+        );
+    }
+
+    /**
+     * Compile an EXISTS predicate for a single path.
+     *
+     * The path is resolved from the outer builder base model and
+     * correlated against:
+     *
+     * - the current outer record
+     * - the current target row being counted
+     *
+     * Example shape:
+     *
+     *   exists (
+     *     select 1
+     *     from ...
+     *     where inner_base.id = outer_base.id
+     *       and terminal_value = target_alias.target_field
+     *   )
+     *
+     * @param  string $path
+     * @param  string $targetAlias
+     * @param  string $targetField
+     * @return string
+     */
+    protected function compilePathExistsPredicateSql(
+        string $path,
+        string $targetAlias,
+        string $targetField
+    ): string {
+        $path = trim($path);
+
+        if ($path === '') {
+            throw new RuntimeException(
+                'EXISTS predicate path must not be empty.'
+            );
+        }
+
+        $builder = $this->makeInnerBuilder();
+        $grammar = $builder->getGrammar();
+
+        $column = $this->normalizeColumn($path);
+        $resolved = $builder->resolveColumnExpression($column, null, false);
+        $terminal = $resolved instanceof Expression
+            ? $resolved->getValue($grammar) // @phpstan-ignore-line
+            : (string) $resolved;
+
+        $innerAlias = $builder->getBaseAlias();
+        $innerKey   = $builder->getBaseModel()->getKeyName();
+
+        $builder->select(new CompiledExpression('1'));
+
+        $builder->whereRaw(sprintf(
+            '%s.%s = %s.%s',
+            $grammar->wrap($innerAlias),
+            $grammar->wrap($innerKey),
+            $grammar->wrap($this->getOuterAlias()),
+            $grammar->wrap($this->getOuterKeyName())
+        ));
+
+        $builder->whereRaw(sprintf(
+            '%s = %s.%s',
+            $terminal,
+            $grammar->wrap($targetAlias),
+            $grammar->wrap($targetField)
+        ));
+
+        $query = $builder->getQuery();
+
+        $builder->autoJoinQuery(
+            $query,
+            SubqueryQueryCompiler::class
+        );
+
+        return sprintf(
+            'exists (%s)',
+            $query->toSql()
+        );
+    }
+
+    /**
+     * Resolve the target model for an EXISTS count chain.
+     *
+     * The target model is derived by traversing the normalized chain
+     * from the outer builder base model and returning the related model
+     * of the final relation.
+     *
+     * @param  array<int, array{relation: string, join: string}> $chain
+     * @return \Illuminate\Database\Eloquent\Model
+     */
+    protected function resolveExistsCountTargetModel(array $chain)
+    {
+        $model = $this->outerBuilder->getBaseModel();
+
+        foreach ($chain as $step) {
+            $relation = $step['relation'];
+            $rel      = $model->{$relation}();
+
+            $model = $rel->getRelated();
+        }
+
+        return $model;
+    }
+
+    /**
+     * Resolve the shared terminal target for an EXISTS count.
+     *
+     * All paths must terminate on the same final relation and field.
+     *
+     * @param  array<int,string> $paths
+     * @return array{
+     *     relation: string,
+     *     field: string,
+     *     chain: array<int, array{relation: string, join: string}>
+     * }
+     */
+    protected function resolveExistsCountTarget(array $paths): array
+    {
+        $targetRelation = null;
+        $targetField    = null;
+        $targetChain    = null;
+
+        foreach ($paths as $path) {
+            $parts = $this->describePathChain($this->normalizeColumn($path));
+            $chain = $parts['chain'];
+            $field = $parts['field'];
+
+            if ($chain === [] || ! is_string($field) || $field === '') {
+                throw new RuntimeException(sprintf(
+                    'Invalid EXISTS count path [%s].',
+                    $path
+                ));
+            }
+
+            $final = end($chain);
+            $relation = $final['relation'];
+
+            if ($targetRelation === null) {
+                $targetRelation = $relation;
+                $targetField    = $field;
+                $targetChain    = $chain; // keep first for model resolution
+                continue;
+            }
+
+            if ($targetRelation !== $relation || $targetField !== $field) {
+                throw new RuntimeException(sprintf(
+                    'EXISTS count paths must share the same terminal relation and field. [%s] given.',
+                    $path
+                ));
+            }
+        }
+
+        return [
+            'relation' => $targetRelation,
+            'field'    => $targetField,
+            'chain'    => $targetChain,
+        ];
     }
 
     /**

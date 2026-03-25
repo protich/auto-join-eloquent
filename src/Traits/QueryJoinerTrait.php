@@ -3,6 +3,15 @@
 namespace protich\AutoJoinEloquent\Traits;
 
 use Illuminate\Database\Query\Builder;
+use RuntimeException;
+
+/**
+ * Trait: QueryJoinerTrait
+ *
+ * Provide manual auto-join query integration and model-defined path
+ * support for models that opt into package behavior without overriding
+ * Laravel's default Eloquent builder.
+ */
 trait QueryJoinerTrait
 {
     use AutoJoinQueryBuilderTrait;
@@ -10,30 +19,43 @@ trait QueryJoinerTrait
     /**
      * Scope a query to manually trigger auto join logic.
      *
-     * This scope method, withAutoJoins, attaches a beforeQuery callback on the underlying query builder.
-     * The callback retrieves the current model from the query and passes it to the AutoJoinQueryBuilder via
-     * setBaseModel() for proper context, then applies auto join logic to add the necessary join clauses.
-     * This enables you to chain withAutoJoins anywhere in the query to manually control the auto joining behavior.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     * @param string $joinType The join type to use (default 'left').
+     * @param  \Illuminate\Database\Eloquent\Builder $query
+     * @param  string                                $joinType
      * @return \Illuminate\Database\Eloquent\Builder
      */
     public function scopeWithAutoJoins($query, string $joinType = 'left')
     {
-        // Retrieve the model instance associated with this query.
         $model = $query->getModel();
 
-        // Attach a callback on the underlying query builder that will be executed before the query runs.
-        $query->getQuery()->beforeQuery(function (Builder $q) use ($model, $joinType) {
-            // Create a new, fully configured AutoJoinQueryBuilder for the current query.
-            $builder = $this->newAutoJoinQueryBuilder($q, $joinType);
-            // Pass the model to the builder so it has full context about the base table.
-            $builder->setBaseModel($model);
-            // Apply auto join logic to modify the query's join clauses.
-            $builder->autoJoinQuery($q);
-        });
+        $builder = $model->newAutoJoinBuilder($query->getQuery(), $joinType);
+        $builder->setBaseModel($model);
 
         return $query;
+    }
+
+    /**
+     * Describe a model-defined auto-join path.
+     *
+     * Paths prefixed with `model__` are delegated to the model so it can
+     * describe how a logical domain path should be resolved by the
+     * auto-join compiler.
+     *
+     * Models should override this method when they want to support custom
+     * logical paths such as `model__accessibleDepartments` or
+     * `model__status`.
+     *
+     * @param  string            $path
+     * @param  array<int,string> $remainder
+     * @return array<string,mixed>
+     *
+     * @throws RuntimeException
+     */
+    public static function describeAutoJoinPath(string $path, array $remainder): array
+    {
+        throw new RuntimeException(sprintf(
+            'Model [%s] does not support auto-join path [%s].',
+            static::class,
+            $path
+        ));
     }
 }

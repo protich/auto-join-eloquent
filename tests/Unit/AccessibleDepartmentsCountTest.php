@@ -9,7 +9,8 @@ use protich\AutoJoinEloquent\Tests\Models\Agent;
  * Test: AccessibleDepartmentsCountTest
  *
  * Verify model-defined accessibleDepartments count descriptors compile
- * and execute across select, order, and having clauses.
+ * and execute across select, order, and having clauses using an
+ * EXISTS-based strategy.
  */
 class AccessibleDepartmentsCountTest extends AutoJoinTestCase
 {
@@ -20,17 +21,16 @@ class AccessibleDepartmentsCountTest extends AutoJoinTestCase
      */
     public function test_select_with_accessible_departments_count(): void
     {
-        $query = Agent::query()
-            ->select([
-                'id',
-                'model__accessibleDepartments__id__count as accessible_departments_count',
-            ]);
+        $query = Agent::query()->select([
+            'id',
+            'model__accessibleDepartments__id__count as accessible_departments_count',
+        ]);
 
         $sql = $this->debugSql($query);
 
         $this->assertStringContainsStringIgnoringCase('select count(*)', $sql);
-        $this->assertStringContainsStringIgnoringCase('union', $sql);
-        $this->assertStringContainsStringIgnoringCase('subquery_count_', $sql);
+        $this->assertStringContainsStringIgnoringCase('exists', $sql);
+        $this->assertStringNotContainsStringIgnoringCase('union', $sql);
         $this->assertStringContainsStringIgnoringCase(
             'as "accessible_departments_count"',
             $sql
@@ -56,8 +56,8 @@ class AccessibleDepartmentsCountTest extends AutoJoinTestCase
         $sql = $this->debugSql($query);
 
         $this->assertStringContainsStringIgnoringCase('order by', $sql);
-        $this->assertStringContainsStringIgnoringCase('union', $sql);
-        $this->assertStringContainsStringIgnoringCase('subquery_count_', $sql);
+        $this->assertStringContainsStringIgnoringCase('accessible_departments_count', $sql);
+        $this->assertStringNotContainsStringIgnoringCase('union', $sql);
 
         $this->assertNonEmptyResults($query->get()->toArray());
     }
@@ -80,8 +80,8 @@ class AccessibleDepartmentsCountTest extends AutoJoinTestCase
         $sql = $this->debugSql($query);
 
         $this->assertStringContainsStringIgnoringCase('having', $sql);
-        $this->assertStringContainsStringIgnoringCase('union', $sql);
-        $this->assertStringContainsStringIgnoringCase('subquery_count_', $sql);
+        $this->assertStringContainsStringIgnoringCase('exists', $sql);
+        $this->assertStringNotContainsStringIgnoringCase('union', $sql);
 
         $this->assertNonEmptyResults($query->get()->toArray());
     }

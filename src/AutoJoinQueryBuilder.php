@@ -415,6 +415,31 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     }
 
     /**
+     * Parse and normalize a column relationship chain for compiler use.
+     *
+     * This exposes the builder's internal chain parsing so compiler
+     * strategies such as EXISTS-based path counting can reuse the same
+     * relationship and field normalization logic used by normal column
+     * resolution.
+     *
+     * @param  string      $column
+     * @param  string|null $baseTable
+     * @param  bool        $allowAutoAliasing
+     * @return array{
+     *     chain: array<int, array{relation: string, join: string}>,
+     *     field: string|null,
+     *     alias: string|null
+     * }
+     */
+    public function describeColumnChain(
+        string $column,
+        ?string $baseTable = null,
+        bool $allowAutoAliasing = true
+    ): array {
+        return $this->parseColumnChain($column, $baseTable, $allowAutoAliasing);
+    }
+
+    /**
      * Parse a column expression into its components: relationship chain, field, and alias.
      *
      * Handles dot-based and relationship-based expressions such as:
@@ -1044,9 +1069,13 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         ?string $queryCompilerClass = null
     ): void {
         $grammar = $this->getGrammar();
-        $from    = $query->from;
+        $from = $query->from;
 
-        $alias = $this->parseAlias($from);
+        if ($from instanceof Expression) {
+            $from = $from->getValue($grammar); // @phpstan-ignore-line
+        }
+
+        $alias = $this->parseAlias((string) $from);
 
         if ($alias !== null) {
             $this->setBaseAlias($alias);

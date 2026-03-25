@@ -4,6 +4,12 @@ namespace protich\AutoJoinEloquent\Traits;
 
 use protich\AutoJoinEloquent\AutoJoinQueryBuilder;
 
+/**
+ * Trait: AutoJoinQueryBuilderTrait
+ *
+ * Provide shared factory methods for constructing and configuring
+ * AutoJoinQueryBuilder instances.
+ */
 trait AutoJoinQueryBuilderTrait
 {
     /**
@@ -24,29 +30,52 @@ trait AutoJoinQueryBuilderTrait
      * Create and configure a new AutoJoinQueryBuilder instance.
      *
      * This method centralizes the configuration for AutoJoinQueryBuilder,
-     * setting the default join type, simple aliases flag, and debug output flag based
-     * on the model's properties or configuration defaults.
+     * setting the default join type, simple aliases flag, and debug
+     * output flag based on the model's properties or configuration
+     * defaults.
      *
-     * @param \Illuminate\Database\Query\Builder $query
-     * @param string $joinType The join type to use (default 'left').
+     * @param  \Illuminate\Database\Query\Builder $query
+     * @param  string                             $joinType
      * @return AutoJoinQueryBuilder
      */
-    protected function newAutoJoinQueryBuilder($query, string $joinType = 'left'): AutoJoinQueryBuilder
-    {
+    protected function newAutoJoinQueryBuilder(
+        $query,
+        string $joinType = 'left'
+    ): AutoJoinQueryBuilder {
         $builder = new AutoJoinQueryBuilder($query);
 
-        // Set the default join type.
         $builder->setDefaultJoinType($joinType);
 
-        // Determine whether to use simple aliases from the property or config.
-        /**
-         * @var bool $useSimple
-         */
-        $useSimple = $this->useSimpleAliases ?: config('auto_join_eloquent.use_simple_aliases', true);
-        $builder->setUseSimpleAliases($useSimple);
+        /** @var bool $useSimple */
+        $useSimple = $this->useSimpleAliases
+            ?: config('auto_join_eloquent.use_simple_aliases', true);
 
-        // Set the debug output flag.
-        $builder->debugOutput = $this->debugOutput || (bool)getenv('AUTO_JOIN_DEBUG_SQL');
+        $builder->setUseSimpleAliases($useSimple);
+        $builder->debugOutput = $this->debugOutput || (bool) getenv('AUTO_JOIN_DEBUG_SQL');
+
+        return $builder;
+    }
+
+    /**
+     * Create a new auto-join Eloquent builder.
+     *
+     * The underlying query builder is wrapped in the package-specific
+     * AutoJoinQueryBuilder and a beforeQuery callback is registered so
+     * auto-join processing runs immediately before execution.
+     *
+     * @param  \Illuminate\Database\Query\Builder $query
+     * @param  string                             $joinType
+     * @return AutoJoinQueryBuilder
+     */
+    public function newAutoJoinBuilder(
+        $query,
+        string $joinType = 'left'
+    ): AutoJoinQueryBuilder {
+        $builder = $this->newAutoJoinQueryBuilder($query, $joinType);
+
+        $query->beforeQuery(function ($query) use ($builder) {
+            $builder->autoJoinQuery($query);
+        });
 
         return $builder;
     }
