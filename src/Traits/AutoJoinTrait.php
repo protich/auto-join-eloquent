@@ -3,6 +3,7 @@
 namespace protich\AutoJoinEloquent\Traits;
 
 use Illuminate\Database\Query\Builder;
+use protich\AutoJoinEloquent\AutoJoinQueryBuilder;
 use RuntimeException;
 
 trait AutoJoinTrait
@@ -10,16 +11,16 @@ trait AutoJoinTrait
     use AutoJoinQueryBuilderTrait;
 
     /**
-     * Create a new Eloquent builder with auto-join support.
+     * Create a new auto-join Eloquent builder.
      *
      * The underlying query builder is wrapped in the package-specific
      * AutoJoinQueryBuilder and a beforeQuery callback is registered so
      * auto-join processing runs immediately before execution.
      *
-     * @param  \Illuminate\Database\Query\Builder $query
-     * @return \protich\AutoJoinEloquent\AutoJoinQueryBuilder
+     * @param  Builder $query
+     * @return AutoJoinQueryBuilder
      */
-    public function newEloquentBuilder($query)
+    public function newAutoJoinBuilder($query): AutoJoinQueryBuilder
     {
         $builder = $this->newAutoJoinQueryBuilder($query);
 
@@ -28,6 +29,17 @@ trait AutoJoinTrait
         });
 
         return $builder;
+    }
+
+    /**
+     * Create a new Eloquent builder with auto-join support.
+     *
+     * @param  Builder $query
+     * @return AutoJoinQueryBuilder
+     */
+    public function newEloquentBuilder($query): AutoJoinQueryBuilder
+    {
+        return $this->newAutoJoinBuilder($query);
     }
 
     /**
@@ -41,8 +53,8 @@ trait AutoJoinTrait
      * logical paths such as `model__accessibleDepartments` or
      * `model__status`.
      *
-     * @param  string              $path
-     * @param  array<int,string>   $remainder
+     * @param  string            $path
+     * @param  array<int,string> $remainder
      * @return array<string,mixed>
      *
      * @throws RuntimeException

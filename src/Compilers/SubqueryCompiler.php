@@ -54,10 +54,11 @@ class SubqueryCompiler extends BaseCompiler
     {
         $model  = $this->outerBuilder->getBaseModel();
         $prefix = $this->outerBuilder->nextSubqueryPrefix();
+        $query  = $model->newQuery()->getQuery();
 
-        /** @var AutoJoinQueryBuilder $builder */
-        $builder = $model->newQuery();
+        $builder = $model->newAutoJoinBuilder($query);
 
+        $builder->setModel($model);
         $builder->setBaseModel($model);
         $builder->setDefaultJoinType($this->outerBuilder->getDefaultJoinType());
         $builder->setUseSimpleAliases(
