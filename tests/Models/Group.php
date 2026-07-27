@@ -3,6 +3,10 @@
 namespace protich\AutoJoinEloquent\Tests\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use protich\AutoJoinEloquent\Model\AutoJoinRelation;
+use protich\AutoJoinEloquent\Tests\Models\Department;
 use protich\AutoJoinEloquent\Tests\Traits\AutoJoinTestTrait;
 
 /**
@@ -58,6 +62,48 @@ class Group extends Model
     }
 
     /**
+     * A deliberately undescribed constrained relation used by failure tests.
+     *
+     * @return HasMany<Group, $this>
+     */
+    public function namedChildren(): HasMany
+    {
+        $relation = $this->hasMany(Group::class, 'parent_id');
+        $relation->where('groups.name', 'Escalations');
+
+        return $relation;
+    }
+
+    /**
+     * Describe constrained group relationships used by auto-join tests.
+     *
+     * @param  AutoJoinRelation  $autoJoinRelation
+     * @param  string            $name
+     * @param  string            $path
+     * @return void
+     */
+    public function describeAutoJoinRelation(
+        AutoJoinRelation $autoJoinRelation,
+        string $name,
+        string $path
+    ): void {
+        if ($name === 'qualifiedDepartments') {
+            $autoJoinRelation->whereRelated('name', 'Support');
+            return;
+        }
+
+        if ($name === 'namedChildren') {
+            return;
+        }
+
+        throw new \RuntimeException(sprintf(
+            'Unexpected complex test relation [%s] for path [%s].',
+            $name,
+            $path
+        ));
+    }
+
+    /**
      * Get the agents assigned to this group.
      *
      * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
@@ -85,5 +131,20 @@ class Group extends Model
             'group_id',
             'department_id'
         );
+    }
+
+    /**
+     * A constrained department relation used inside nested count paths.
+     *
+     * @return BelongsToMany<Department, $this, \Illuminate\Database\Eloquent\Relations\Pivot, 'pivot'>
+     */
+    public function qualifiedDepartments(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            Department::class,
+            'group_departments',
+            'group_id',
+            'department_id'
+        )->where('departments.name', 'Support');
     }
 }
