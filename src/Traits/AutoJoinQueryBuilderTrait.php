@@ -3,6 +3,7 @@
 namespace protich\AutoJoinEloquent\Traits;
 
 use protich\AutoJoinEloquent\AutoJoinQueryBuilder;
+use protich\AutoJoinEloquent\Model\AutoJoinRelation;
 use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
 use protich\AutoJoinEloquent\Model\PathRequest;
 use RuntimeException;
@@ -34,6 +35,38 @@ trait AutoJoinQueryBuilderTrait
             'Model [%s] does not support auto-join path [%s].',
             static::class,
             $request->path
+        ));
+    }
+
+    /**
+     * Describe the join constraints for a complex Eloquent relationship.
+     *
+     * This hook is called only when JoinComplexity detects query state beyond
+     * standard relationship keys. Implementations mutate the supplied
+     * AutoJoinRelation with every related, parent, or pivot constraint that
+     * affects which rows match. The model's description is authoritative; the
+     * package requires a non-empty description but cannot compare it for
+     * equivalence with arbitrary Eloquent query-builder state.
+     *
+     * @param  AutoJoinRelation  $autoJoinRelation Model-facing relationship
+     *                                             description.
+     * @param  string            $name             Relationship method name.
+     * @param  string            $path             Complete normalized query
+     *                                             path that triggered the join.
+     * @return void
+     *
+     * @throws RuntimeException When the model does not describe the relation.
+     */
+    public function describeAutoJoinRelation(
+        AutoJoinRelation $autoJoinRelation,
+        string $name,
+        string $path
+    ): void {
+        throw new RuntimeException(sprintf(
+            'Complex auto-join relation [%s] on model [%s] requires a description for path [%s].',
+            $name,
+            static::class,
+            $path
         ));
     }
 
