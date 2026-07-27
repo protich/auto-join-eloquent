@@ -10,5 +10,10 @@ namespace protich\AutoJoinEloquent\Compilers;
  */
 class GroupByCompiler extends BaseCompiler
 {
+    /**
+     * {@inheritDoc}
+     */
+    protected const BINDING_TYPE = 'groupBy';
+
     // Noop
 }

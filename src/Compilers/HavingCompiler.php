@@ -10,5 +10,10 @@ namespace protich\AutoJoinEloquent\Compilers;
  */
 class HavingCompiler extends BaseCompiler
 {
+    /**
+     * {@inheritDoc}
+     */
+    protected const BINDING_TYPE = 'having';
+
     // No overrides necessary
 }

@@ -16,6 +16,11 @@ use Illuminate\Database\Query\Expression;
 class OrderByCompiler extends BaseCompiler
 {
     /**
+     * {@inheritDoc}
+     */
+    protected const BINDING_TYPE = 'order';
+
+    /**
      * Compile an ORDER BY column expression.
      *
      * @param  string $column

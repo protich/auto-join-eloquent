@@ -21,6 +21,27 @@ use Illuminate\Database\Query\Expression;
  */
 abstract class BaseCompiler
 {
+    /**
+     * Laravel binding group for expressions compiled by this compiler.
+     *
+     * @var string
+     */
+    protected const BINDING_TYPE = 'select';
+
+    /**
+     * Current insertion offset within this compiler's Laravel binding group.
+     *
+     * @var int
+     */
+    protected int $bindingOffset = 0;
+
+    /**
+     * Bindings generated while compiling the current clause entry.
+     *
+     * @var int
+     */
+    protected int $generatedBindings = 0;
+
     protected AutoJoinQueryBuilder $builder;
 
     public function __construct(AutoJoinQueryBuilder $builder)
@@ -40,50 +61,66 @@ abstract class BaseCompiler
      * @param  array<int|string,mixed> $clauses
      * @return array<int|string,mixed>
      */
-    // @phpstan-ignore-next-line
     public function compileClause(array $clauses): array
     {
-        return collect($clauses)->map(function (string|array|Expression $clause) {
+        $compiled = [];
+
+        foreach ($clauses as $key => $clause) {
+            $this->beginClause();
+            $originalClause = $clause;
+
             // Leave compiled expressions untouched.
             if ($clause instanceof CompiledExpression) {
-                return $clause;
+                $compiled[$key] = $clause;
+                $this->finishClause($originalClause);
+                continue;
             }
 
             // Unwrap generic Expression objects to raw SQL.
             if ($clause instanceof Expression) {
-                $clause = $clause->getValue($this->builder->getGrammar()); // @phpstan-ignore-line
+                $clause = $clause->getValue($this->builder->getGrammar());
             }
 
             // Compile scalar column expressions (e.g. "user.id").
             if (is_string($clause)) {
-                return $this->compileColumn($clause);
+                $compiled[$key] = $this->compileColumn($clause);
+                $this->finishClause($originalClause);
+                continue;
             }
 
             // Compile structured clause arrays.
             if (is_array($clause)) {
                 // ['column' => 'user.id__count']
                 if (isset($clause['column'])) {
-                    $compiled = $this->compileColumn((string) $clause['column']); // @phpstan-ignore-line
-                    $clause['column'] = $compiled instanceof Expression
-                        ? $compiled
-                        : (string) $compiled; // @phpstan-ignore-line
+                    $compiledColumn = $this->compileColumn(
+                        (string) $clause['column'] // @phpstan-ignore-line
+                    );
+                    $clause['column'] = $compiledColumn;
 
-                    return $clause;
+                    $compiled[$key] = $clause;
+                    $this->finishClause($originalClause);
+                    continue;
                 }
 
                 // ['type' => 'Raw', 'sql' => 'COUNT(...) > 5']
                 if (
-                    isset($clause['sql'])
-                    && strcasecmp((string) ($clause['type'] ?? ''), 'Raw') === 0
+                    is_string($clause['sql'] ?? null)
+                    && is_string($clause['type'] ?? null)
+                    && strcasecmp($clause['type'], 'Raw') === 0
                 ) {
-                    $clause['sql'] = $this->compileRawSql((string) $clause['sql']); // @phpstan-ignore-line
+                    $clause['sql'] = $this->compileRawSql($clause['sql']);
 
-                    return $clause;
+                    $compiled[$key] = $clause;
+                    $this->finishClause($originalClause);
+                    continue;
                 }
             }
 
-            return $clause;
-        })->all();
+            $compiled[$key] = $clause;
+            $this->finishClause($originalClause);
+        }
+
+        return $compiled;
     }
 
     /**
@@ -620,8 +657,10 @@ abstract class BaseCompiler
         $grammar  = $this->builder->getGrammar();
         $compiler = new SubqueryCompiler($this->builder);
 
-        $sql = $compiler->compileExistsCountSubquerySql($paths);
+        $subquery = $compiler->compileExistsCountSubquery($paths);
+        $sql = $subquery->sql();
 
+        $this->addSubqueryBindings($subquery);
 
         if ($alias === null && $allowAlias) {
             $alias = $this->makeAggregateAlias(
@@ -667,11 +706,19 @@ abstract class BaseCompiler
 
         $subqueries = array_map(
             fn (string $path) => (new SubqueryCompiler($this->builder))
-                ->compilePathSelectSubquerySql($path),
+                ->compilePathSelectSubquerySqlExpression($path),
             $paths
         );
 
-        $unionSql     = implode("\nUNION\n", $subqueries);
+        $unionSql = implode("\nUNION\n", array_map(
+            fn (SubQueryExpression $subquery) => $subquery->sql(),
+            $subqueries
+        ));
+
+        foreach ($subqueries as $subquery) {
+            $this->addSubqueryBindings($subquery);
+        }
+
         $derivedAlias = SubqueryCompiler::makeSubqueryAlias('count', $paths);
 
         $sql = sprintf(
@@ -692,6 +739,134 @@ abstract class BaseCompiler
         }
 
         return new SubQueryExpression($sql);
+    }
+
+    /**
+     * Add an inner subquery's bindings to the outer query clause currently
+     * being compiled.
+     *
+     * Laravel stores bindings by SQL clause. Preserving that binding group is
+     * required so placeholders embedded in select, where, having, group, or
+     * order expressions are flattened in the same order as the final SQL.
+     *
+     * @param  SubQueryExpression  $subquery
+     * @return void
+     */
+    protected function addSubqueryBindings(
+        SubQueryExpression $subquery
+    ): void {
+        if ($subquery->bindings() === []) {
+            return;
+        }
+
+        $query = $this->builder->getQuery();
+        $bindingType = $this->bindingType();
+        $bindings = $query->getRawBindings()[$bindingType];
+        $insertAt = $this->bindingOffset + $this->generatedBindings;
+
+        array_splice(
+            $bindings,
+            $insertAt,
+            0,
+            $subquery->bindings()
+        );
+
+        $query->setBindings($bindings, $bindingType);
+        $this->generatedBindings += count($subquery->bindings());
+    }
+
+    /**
+     * Validate and return Laravel's binding group for this compiler.
+     *
+     * @return 'select'|'from'|'join'|'where'|'groupBy'|'having'|'order'|'union'|'unionOrder'
+     */
+    protected function bindingType(): string
+    {
+        return match (static::BINDING_TYPE) {
+            'select', 'from', 'join', 'where', 'groupBy', 'having',
+            'order', 'union', 'unionOrder' => static::BINDING_TYPE,
+            default => throw new \LogicException(sprintf(
+                'Unsupported compiler binding type [%s].',
+                static::BINDING_TYPE
+            )),
+        };
+    }
+
+    /**
+     * Start tracking generated bindings for one clause entry.
+     *
+     * @return void
+     */
+    protected function beginClause(): void
+    {
+        $this->generatedBindings = 0;
+    }
+
+    /**
+     * Advance past bindings generated by and originally belonging to a clause.
+     *
+     * @param  mixed  $clause
+     * @return void
+     */
+    protected function finishClause(mixed $clause): void
+    {
+        $this->bindingOffset += $this->generatedBindings
+            + $this->countOriginalBindings($clause);
+    }
+
+    /**
+     * Count bindings originally associated with a single query clause.
+     *
+     * The count is used only to locate generated subquery bindings inside
+     * Laravel's existing clause-specific binding array.
+     *
+     * @param  mixed  $clause
+     * @return int
+     */
+    protected function countOriginalBindings(mixed $clause): int
+    {
+        if ($clause instanceof Expression) {
+            return substr_count(
+                $clause->getValue($this->builder->getGrammar()), // @phpstan-ignore-line
+                '?'
+            );
+        }
+
+        if (! is_array($clause)) {
+            return 0;
+        }
+
+        $type = $clause['type'] ?? null;
+
+        if (in_array($type, [
+            'Basic',
+            'Date',
+            'Time',
+            'Day',
+            'Month',
+            'Year',
+            'JsonContains',
+            'JsonLength',
+            'Fulltext',
+        ], true)) {
+            return ($clause['value'] ?? null) instanceof Expression ? 0 : 1;
+        }
+
+        $values = $clause['values'] ?? null;
+        $sql = $clause['sql'] ?? null;
+        $query = $clause['query'] ?? null;
+
+        return match ($type) {
+            'In', 'NotIn', 'Between', 'NotBetween' =>
+                is_array($values) ? count($values) : 0,
+            'BetweenColumns', 'NotBetweenColumns' => 0,
+            'Raw' => is_string($sql) ? substr_count($sql, '?') : 0,
+            'Exists', 'NotExists' =>
+                $query instanceof \Illuminate\Database\Query\Builder
+                    ? count($query->getBindings())
+                    : 0,
+            default => 0,
+        };
     }
 
     /**
