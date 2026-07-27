@@ -3,6 +3,9 @@
 namespace protich\AutoJoinEloquent\Traits;
 
 use protich\AutoJoinEloquent\AutoJoinQueryBuilder;
+use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
+use protich\AutoJoinEloquent\Model\PathRequest;
+use RuntimeException;
 
 /**
  * Trait: AutoJoinQueryBuilderTrait
@@ -12,6 +15,28 @@ use protich\AutoJoinEloquent\AutoJoinQueryBuilder;
  */
 trait AutoJoinQueryBuilderTrait
 {
+    /**
+     * Describe a complete path carrying the reserved `model__` marker.
+     *
+     * Models override this hook only when they expose model-defined paths. The
+     * request contains the complete expression so the package does not impose
+     * application-specific segmentation rules.
+     *
+     * @param  PathRequest  $request
+     * @return ExpressionDescriptor
+     *
+     * @throws RuntimeException When the model does not support the path.
+     */
+    public static function describeAutoJoinPath(
+        PathRequest $request
+    ): ExpressionDescriptor {
+        throw new RuntimeException(sprintf(
+            'Model [%s] does not support auto-join path [%s].',
+            static::class,
+            $request->path
+        ));
+    }
+
     /**
      * Option to use simple sequential aliases.
      *

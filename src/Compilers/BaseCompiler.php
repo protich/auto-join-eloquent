@@ -3,7 +3,7 @@
 namespace protich\AutoJoinEloquent\Compilers;
 
 use protich\AutoJoinEloquent\AutoJoinQueryBuilder;
-use protich\AutoJoinEloquent\Support\Descriptor;
+use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
 use protich\AutoJoinEloquent\Support\CompiledExpression;
 use protich\AutoJoinEloquent\Support\SubQueryExpression;
 
@@ -440,8 +440,7 @@ abstract class BaseCompiler
      * @param  string $column
      * @return array{
      *     path:string,
-     *     segments:array<int,string>,
-     *     descriptor:array<string,mixed>,
+     *     descriptor:ExpressionDescriptor,
      *     alias:?string
      * }|null
      */
@@ -457,7 +456,6 @@ abstract class BaseCompiler
 
         return [
             'path'       => $described['path'],
-            'segments'   => $described['segments'],
             'descriptor' => $described['descriptor'],
             'alias'      => $parsed['alias'] ?? null,
         ];
@@ -468,8 +466,7 @@ abstract class BaseCompiler
      *
      * @param  array{
      *     path:string,
-     *     segments:array<int,string>,
-     *     descriptor:array<string,mixed>,
+     *     descriptor:ExpressionDescriptor,
      *     alias:?string
      * } $modelPath
      * @param  bool $allowAlias
@@ -477,15 +474,20 @@ abstract class BaseCompiler
      */
     protected function compileModelDefinedPath(array $modelPath, bool $allowAlias = false): Expression
     {
-        $descriptor = Descriptor::make(
-            $modelPath['descriptor'],
-            $modelPath['alias'] ?? null,
-            $allowAlias
-        );
+        $descriptor = $modelPath['descriptor'];
+        $alias = $modelPath['alias'] ?? null;
 
         return match ($descriptor->type()) {
-            'path'  => $this->compileModelPathDescriptor($descriptor),
-            'count' => $this->compileModelCountDescriptor($descriptor),
+            ExpressionDescriptor::TYPE_PATH => $this->compileModelPathDescriptor(
+                $descriptor,
+                $alias,
+                $allowAlias
+            ),
+            ExpressionDescriptor::TYPE_COUNT => $this->compileModelCountDescriptor(
+                $descriptor,
+                $alias,
+                $allowAlias
+            ),
             default => throw new \RuntimeException(sprintf(
                 'Unsupported model-defined descriptor type [%s] for path [%s].',
                 $descriptor->type(),
@@ -497,15 +499,17 @@ abstract class BaseCompiler
     /**
      * Compile a model-defined path descriptor of type `path`.
      *
-     * @param  Descriptor $descriptor
-     * @return Expression
+     * @param  ExpressionDescriptor  $descriptor
      */
-    protected function compileModelPathDescriptor(Descriptor $descriptor): Expression
-    {
+    protected function compileModelPathDescriptor(
+        ExpressionDescriptor $descriptor,
+        ?string $alias,
+        bool $allowAlias
+    ): Expression {
         return $this->builder->resolveColumnExpression(
-            $descriptor->path(), // @phpstan-ignore-line
-            $descriptor->alias(),
-            $descriptor->allowsAlias()
+            $descriptor->getPath(), // @phpstan-ignore-line
+            $allowAlias ? $alias : null,
+            $allowAlias
         );
     }
 
@@ -515,24 +519,30 @@ abstract class BaseCompiler
      * Single-path counts reuse the normal aggregate compiler. Multi-path
      * counts are compiled through correlated subqueries and UNION.
      *
-     * @param  Descriptor $descriptor
-     * @return Expression
+     * @param  ExpressionDescriptor  $descriptor
      */
-    protected function compileModelCountDescriptor(Descriptor $descriptor): Expression
-    {
+    protected function compileModelCountDescriptor(
+        ExpressionDescriptor $descriptor,
+        ?string $alias,
+        bool $allowAlias
+    ): Expression {
         $paths = $descriptor->paths();
 
         if (count($paths) === 1) {
             return $this->compileAggregateExpression([
                 'aggregateFunction' => 'COUNT',
                 'innerExpression'   => $paths[0],
-                'alias'             => $descriptor->alias(),
+                'alias'             => $allowAlias ? $alias : null,
                 'outerExpression'   => '',
                 'distinct'          => $descriptor->distinct(),
-            ], $descriptor->shouldAutoAlias());
+            ], $allowAlias && $alias === null);
         }
 
-        return $this->compileMultiPathCountDescriptor($descriptor);
+        return $this->compileMultiPathCountDescriptor(
+            $descriptor,
+            $allowAlias ? $alias : null,
+            $allowAlias
+        );
     }
 
     /**
@@ -542,11 +552,13 @@ abstract class BaseCompiler
      * compiled using an EXISTS-based strategy. All other multi-path counts
      * fall back to the UNION-based strategy.
      *
-     * @param  Descriptor $descriptor
-     * @return Expression
+     * @param  ExpressionDescriptor  $descriptor
      */
-    protected function compileMultiPathCountDescriptor(Descriptor $descriptor): Expression
-    {
+    protected function compileMultiPathCountDescriptor(
+        ExpressionDescriptor $descriptor,
+        ?string $alias,
+        bool $allowAlias
+    ): Expression {
         if (! $descriptor->distinct()) {
             throw new \RuntimeException(
                 'Multi-path count descriptors currently require [distinct => true].'
@@ -556,10 +568,18 @@ abstract class BaseCompiler
         $paths = $descriptor->paths();
 
         if ($this->canCompileExistsCountDescriptor($paths)) {
-            return $this->compileExistsCountDescriptor($descriptor);
+            return $this->compileExistsCountDescriptor(
+                $descriptor,
+                $alias,
+                $allowAlias
+            );
         }
 
-        return $this->compileUnionCountDescriptor($descriptor);
+        return $this->compileUnionCountDescriptor(
+            $descriptor,
+            $alias,
+            $allowAlias
+        );
     }
 
     /**
@@ -583,11 +603,13 @@ abstract class BaseCompiler
      * This avoids UNION-based correlated derived tables and is compatible
      * with MySQL correlation rules.
      *
-     * @param  Descriptor $descriptor
-     * @return Expression
+     * @param  ExpressionDescriptor  $descriptor
      */
-    protected function compileExistsCountDescriptor(Descriptor $descriptor): Expression
-    {
+    protected function compileExistsCountDescriptor(
+        ExpressionDescriptor $descriptor,
+        ?string $alias,
+        bool $allowAlias
+    ): Expression {
         if (! $descriptor->distinct()) {
             throw new \RuntimeException(
                 'EXISTS-based count descriptors currently require [distinct => true].'
@@ -600,9 +622,8 @@ abstract class BaseCompiler
 
         $sql = $compiler->compileExistsCountSubquerySql($paths);
 
-        $alias = $descriptor->alias();
 
-        if ($alias === null && $descriptor->shouldAutoAlias()) {
+        if ($alias === null && $allowAlias) {
             $alias = $this->makeAggregateAlias(
                 'COUNT',
                 implode('_', $paths)
@@ -628,11 +649,13 @@ abstract class BaseCompiler
      * target counting, may be used by callers when the descriptor shape
      * allows a more efficient compilation path.
      *
-     * @param  Descriptor $descriptor
-     * @return Expression
+     * @param  ExpressionDescriptor  $descriptor
      */
-    protected function compileUnionCountDescriptor(Descriptor $descriptor): Expression
-    {
+    protected function compileUnionCountDescriptor(
+        ExpressionDescriptor $descriptor,
+        ?string $alias,
+        bool $allowAlias
+    ): Expression {
         if (! $descriptor->distinct()) {
             throw new \RuntimeException(
                 'Multi-path count descriptors currently require [distinct => true].'
@@ -657,9 +680,7 @@ abstract class BaseCompiler
             $derivedAlias
         );
 
-        $alias = $descriptor->alias();
-
-        if ($alias === null && $descriptor->shouldAutoAlias()) {
+        if ($alias === null && $allowAlias) {
             $alias = $this->makeAggregateAlias(
                 'COUNT',
                 implode('_', $paths)

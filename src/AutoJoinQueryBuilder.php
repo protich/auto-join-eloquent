@@ -7,6 +7,8 @@ use protich\AutoJoinEloquent\Compilers\{QueryCompiler,
 use protich\AutoJoinEloquent\Join\JoinContext;
 use protich\AutoJoinEloquent\Join\JoinClauseInfo;
 use protich\AutoJoinEloquent\Join\JoinAliasManager;
+use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
+use protich\AutoJoinEloquent\Model\PathRequest;
 
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model;
@@ -573,22 +575,23 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     }
 
     /**
-     * Parse a model-defined column path into its logical path and segments.
+     * Resolve the model-defined path descriptor for the given column.
      *
-     * Example:
-     *
-     * - model__status
-     *   => ['path' => 'status', 'segments' => []]
-     *
-     * - model__accessibleDepartments__id__count
-     *   => ['path' => 'accessibleDepartments', 'segments' => ['id', 'count']]
+     * The complete path is delegated to the model without package-level
+     * segmentation or interpretation.
      *
      * @param  string $column
-     * @return array{path:string,segments:array<int,string>}
+     * @return array{
+     *     path:string,
+     *     descriptor:ExpressionDescriptor
+     * }
      *
-     * @throws \InvalidArgumentException
+     * @throws \InvalidArgumentException If the column is not a valid
+     *                                   model-defined path.
+     * @throws \RuntimeException If the model hook is missing or returns an
+     *                           unsupported value.
      */
-    public function parseModelDefinedPath(string $column): array
+    public function describeModelDefinedPath(string $column): array
     {
         if (! $this->isModelDefinedPath($column)) {
             throw new \InvalidArgumentException(sprintf(
@@ -597,52 +600,31 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             ));
         }
 
-        $parts = explode('__', $column);
+        $model = $this->getBaseModel();
 
-        array_shift($parts); // remove "model"
+        if (! method_exists($model, 'describeAutoJoinPath')) {
+            throw new \RuntimeException(sprintf(
+                'Model [%s] must define describeAutoJoinPath() to resolve [%s].',
+                $model::class,
+                $column
+            ));
+        }
 
-        $path = array_shift($parts);
+        $descriptor = $model->describeAutoJoinPath(
+            new PathRequest($column)
+        );
 
-        if (! is_string($path) || $path === '') {
-            throw new \InvalidArgumentException(sprintf(
-                'Column [%s] does not define a model path name.',
+        if (! $descriptor instanceof ExpressionDescriptor) {
+            throw new \RuntimeException(sprintf(
+                'Model [%s] must return an ExpressionDescriptor for auto-join path [%s].',
+                $model::class,
                 $column
             ));
         }
 
         return [
-            'path' => $path,
-            'segments' => array_values(array_filter(
-                $parts,
-                fn ($part) => $part !== ''
-            )),
-        ];
-    }
-
-    /**
-     * Resolve the model-defined path descriptor for the given column.
-     *
-     * This method parses the logical path and delegates descriptor resolution
-     * to the base model via describeAutoJoinPath().
-     *
-     * @param  string $column
-     * @return array{
-     *     path:string,
-     *     segments:array<int,string>,
-     *     descriptor:array<string,mixed>
-     * }
-     */
-    public function describeModelDefinedPath(string $column): array
-    {
-        $parsed = $this->parseModelDefinedPath($column);
-
-        return [
-            'path' => $parsed['path'],
-            'segments' => $parsed['segments'],
-            'descriptor' => $this->getBaseModel()::describeAutoJoinPath(
-                $parsed['path'],
-                $parsed['segments']
-            ),
+            'path' => $column,
+            'descriptor' => $descriptor,
         ];
     }
 

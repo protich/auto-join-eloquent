@@ -3,6 +3,8 @@
 namespace protich\AutoJoinEloquent\Tests\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
+use protich\AutoJoinEloquent\Model\PathRequest;
 use protich\AutoJoinEloquent\Tests\Traits\AutoJoinTestTrait;
 
 /**
@@ -49,63 +51,28 @@ class Agent extends Model
      * This acts as the entry point for resolving `model__*` paths
      * into descriptor definitions understood by the auto-join compiler.
      *
-     * Each supported path delegates to a dedicated method to keep
-     * this router small and maintainable.
+     * @param  PathRequest  $request
+     * @return ExpressionDescriptor
      *
-     * @param  string            $path
-     * @param  array<int,string> $segments
-     * @return array<string,mixed>
+     * @throws \RuntimeException If the test path is unsupported.
      */
-    public static function describeAutoJoinPath(string $path, array $segments): array
-    {
-        return match ($path) {
-            'status'                 => static::describeStatusPath($segments),
-            'accessibleDepartments' => static::describeAccessibleDepartmentsPath($segments),
-            default                 => parent::describeAutoJoinPath($path, $segments),
+    public static function describeAutoJoinPath(
+        PathRequest $request
+    ): ExpressionDescriptor {
+        return match ($request->path) {
+            'model__status' => ExpressionDescriptor::path('flags'),
+            'model__accessibleDepartments__id__count' => ExpressionDescriptor::count(
+                [
+                    'departments.id',
+                    'groups.departments.id',
+                ],
+                distinct: true
+            ),
+            default => throw new \RuntimeException(sprintf(
+                'Unsupported test model path [%s].',
+                $request->path
+            )),
         };
-    }
-
-    /**
-     * Describe the "status" model path.
-     *
-     * Maps logical status to the underlying flags column.
-     *
-     * @param  array<int,string> $segments
-     * @return array<string,mixed>
-     */
-    protected static function describeStatusPath(array $segments): array
-    {
-        return [
-            'type' => 'path',
-            'path' => 'flags',
-        ];
-    }
-
-    /**
-     * Describe the "accessibleDepartments" model path.
-     *
-     * Combines:
-     * - direct department membership
-     * - group-based department access
-     *
-     * This enables queries like:
-     *
-     * - model__accessibleDepartments__id__count
-     * - model__accessibleDepartments__id__in
-     *
-     * @param  array<int,string> $segments
-     * @return array<string,mixed>
-     */
-    protected static function describeAccessibleDepartmentsPath(array $segments): array
-    {
-        return [
-            'type'     => 'count',
-            'paths'    => [
-                'departments.id',
-                'groups.departments.id',
-            ],
-            'distinct' => true,
-        ];
     }
 
     /**
