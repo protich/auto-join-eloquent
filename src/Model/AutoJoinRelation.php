@@ -10,10 +10,10 @@ use InvalidArgumentException;
  *
  * Model-facing description of the constraints required by a complex relation.
  *
- * The package creates this object from the Eloquent relation and passes it to
- * the model's describeAutoJoinRelation() hook. The resulting description is
- * authoritative: models must add every row-affecting constraint that the
- * auto-joiner cannot derive from normal relationship metadata.
+ * The model creates this object from its Eloquent relation through
+ * describeAutoJoinRelation(). The returned description is authoritative and
+ * must include every row-affecting constraint that the auto-joiner cannot
+ * derive from normal relationship metadata.
  *
  * The package verifies that a complex relationship receives a non-empty
  * description, but it cannot prove that the description is equivalent to

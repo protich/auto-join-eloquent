@@ -168,20 +168,16 @@ public function activeAssignments()
 }
 
 public function describeAutoJoinRelation(
-    AutoJoinRelation $autoJoinRelation,
     string $name,
     string $path
-): void {
-    if ($name === 'activeAssignments') {
-        $autoJoinRelation->whereRelated('status', 'active');
-        return;
-    }
+): AutoJoinRelation {
+    $description = parent::describeAutoJoinRelation($name, $path);
 
-    throw new \RuntimeException(sprintf(
-        'Unsupported complex auto-join relation [%s] for [%s].',
-        $name,
-        $path
-    ));
+    return match ($name) {
+        'activeAssignments' => $description
+            ->whereRelated('status', 'active'),
+        default => $description,
+    };
 }
 ```
 
@@ -190,11 +186,14 @@ table through `whereRelated()`, `whereParent()`, and `wherePivot()`, with
 corresponding null helpers. Constraint values are added to the join as query
 bindings.
 
-The model's relationship description is authoritative. It must include every
-row-affecting condition that is not part of standard Eloquent relationship key
-metadata. The package rejects an empty description for a complex relationship,
-but it does not attempt to prove that a description is equivalent to arbitrary
-query-builder state. If a relationship uses a condition that
+The base implementation verifies the named relationship, resolves it, and
+creates an empty description. The auto-joiner asks the model for this
+description for every relationship. `JoinComplexity` determines whether an
+empty result is valid: complex relationships must include every row-affecting
+condition that is not part of standard Eloquent relationship key metadata.
+
+The package does not attempt to prove that a description is equivalent to
+arbitrary query-builder state. If a relationship uses a condition that
 `AutoJoinRelation` cannot express, the model hook should throw rather than
 provide a partial description.
 

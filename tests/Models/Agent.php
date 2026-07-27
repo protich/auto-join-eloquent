@@ -2,13 +2,11 @@
 
 namespace protich\AutoJoinEloquent\Tests\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use protich\AutoJoinEloquent\Model\AutoJoinRelation;
 use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
 use protich\AutoJoinEloquent\Model\PathRequest;
-use protich\AutoJoinEloquent\Tests\Traits\AutoJoinTestTrait;
 
 /**
  * Class: Agent
@@ -26,10 +24,8 @@ use protich\AutoJoinEloquent\Tests\Traits\AutoJoinTestTrait;
  * - model__status
  * - model__accessibleDepartments
  */
-class Agent extends Model
+class Agent extends BaseModel
 {
-    use AutoJoinTestTrait;
-
     /**
      * Calls made to the complex relationship description hook.
      *
@@ -102,43 +98,39 @@ class Agent extends Model
     /**
      * Describe only relationships whose query contains extra constraints.
      *
-     * @param  AutoJoinRelation  $autoJoinRelation
-     * @param  string            $name
-     * @param  string            $path
-     * @return void
+     * @param  string  $name
+     * @param  string  $path
+     * @return AutoJoinRelation
      *
-     * @throws \RuntimeException If an unexpected relationship is delegated.
      */
     public function describeAutoJoinRelation(
-        AutoJoinRelation $autoJoinRelation,
         string $name,
         string $path
-    ): void {
+    ): AutoJoinRelation {
+        $description = parent::describeAutoJoinRelation($name, $path);
         self::$autoJoinRelationDescriptions[] = compact('name', 'path');
 
-        match ($name) {
-            'namedUser' => $autoJoinRelation->whereRelated('name', 'Alice'),
-            'flaggedUser' => $autoJoinRelation->whereParent('flags', 1),
-            'userWithoutPhone' => $autoJoinRelation
+        return match ($name) {
+            'namedUser',
+            'returnedNamedUser' => $description
+                ->whereRelated('name', 'Alice'),
+            'flaggedUser' => $description->whereParent('flags', 1),
+            'userWithoutPhone' => $description
                 ->whereRelatedNull('phone'),
-            'userWithPhone' => $autoJoinRelation
+            'userWithPhone' => $description
                 ->whereRelatedNull('phone', not: true),
-            'invalidPivotUser' => $autoJoinRelation
+            'invalidPivotUser' => $description
                 ->wherePivot('status', 'active'),
-            'assignedDepartments' => $autoJoinRelation->wherePivot(
+            'assignedDepartments' => $description->wherePivot(
                 'assigned_at',
                 '>=',
                 '2025-01-01'
             ),
-            'pendingDepartments' => $autoJoinRelation
+            'pendingDepartments' => $description
                 ->wherePivotNull('assigned_at'),
-            'qualifiedDepartments' => $autoJoinRelation
+            'qualifiedDepartments' => $description
                 ->whereRelated('name', 'Support'),
-            default => throw new \RuntimeException(sprintf(
-                'Unexpected complex test relation [%s] for path [%s].',
-                $name,
-                $path
-            )),
+            default => $description,
         };
     }
 
@@ -148,6 +140,19 @@ class Agent extends Model
      * @return BelongsTo<User, $this>
      */
     public function namedUser(): BelongsTo
+    {
+        $relation = $this->belongsTo(User::class, 'user_id');
+        $relation->where('users.name', 'Alice');
+
+        return $relation;
+    }
+
+    /**
+     * A constrained relation whose hook returns a replacement description.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function returnedNamedUser(): BelongsTo
     {
         $relation = $this->belongsTo(User::class, 'user_id');
         $relation->where('users.name', 'Alice');

@@ -2,12 +2,10 @@
 
 namespace protich\AutoJoinEloquent\Tests\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use protich\AutoJoinEloquent\Model\AutoJoinRelation;
 use protich\AutoJoinEloquent\Tests\Models\Department;
-use protich\AutoJoinEloquent\Tests\Traits\AutoJoinTestTrait;
 
 /**
  * Class: Group
@@ -20,10 +18,8 @@ use protich\AutoJoinEloquent\Tests\Traits\AutoJoinTestTrait;
  * - belongs to many agents
  * - belongs to many departments
  */
-class Group extends Model
+class Group extends BaseModel
 {
-    use AutoJoinTestTrait;
-
     /**
      * The table associated with the model.
      *
@@ -77,30 +73,21 @@ class Group extends Model
     /**
      * Describe constrained group relationships used by auto-join tests.
      *
-     * @param  AutoJoinRelation  $autoJoinRelation
-     * @param  string            $name
-     * @param  string            $path
-     * @return void
+     * @param  string  $name
+     * @param  string  $path
+     * @return AutoJoinRelation
      */
     public function describeAutoJoinRelation(
-        AutoJoinRelation $autoJoinRelation,
         string $name,
         string $path
-    ): void {
-        if ($name === 'qualifiedDepartments') {
-            $autoJoinRelation->whereRelated('name', 'Support');
-            return;
-        }
+    ): AutoJoinRelation {
+        $description = parent::describeAutoJoinRelation($name, $path);
 
-        if ($name === 'namedChildren') {
-            return;
-        }
-
-        throw new \RuntimeException(sprintf(
-            'Unexpected complex test relation [%s] for path [%s].',
-            $name,
-            $path
-        ));
+        return match ($name) {
+            'qualifiedDepartments' => $description
+                ->whereRelated('name', 'Support'),
+            default => $description,
+        };
     }
 
     /**

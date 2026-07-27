@@ -12,12 +12,13 @@ use protich\AutoJoinEloquent\Tests\Models\Group;
 class ComplexRelationshipTest extends AutoJoinTestCase
 {
     /**
-     * Ensure normal relationship metadata never invokes the model hook.
+     * Ensure normal relationships are resolved through the model hook.
      *
      * @return void
      */
-    public function test_normal_relation_does_not_require_model_description(): void
+    public function test_normal_relation_is_described_by_the_model(): void
     {
+        Agent::$autoJoinRelationDescriptions = [];
         $query = Agent::query()->select('user.name');
 
         $sql = $this->debugSql($query);
@@ -27,6 +28,27 @@ class ComplexRelationshipTest extends AutoJoinTestCase
             $sql
         );
         $this->assertSame([], $query->getBindings());
+        $this->assertSame([[
+            'name' => 'user',
+            'path' => 'user.name',
+        ]], Agent::$autoJoinRelationDescriptions);
+    }
+
+    /**
+     * Ensure unresolved relationship calls fail with model and path context.
+     *
+     * @return void
+     */
+    public function test_missing_relation_fails_with_context(): void
+    {
+        $query = Agent::query()->select('missingRelation.name');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage(
+            'Unable to resolve auto-join relationship [missingRelation]'
+        );
+
+        $query->toSql();
     }
 
     /**
@@ -37,6 +59,24 @@ class ComplexRelationshipTest extends AutoJoinTestCase
     public function test_complex_related_constraint_is_model_described_and_bound(): void
     {
         $query = Agent::query()->select('namedUser.name');
+
+        $sql = $this->debugSql($query);
+
+        $this->assertStringContainsString(
+            'left join "ost_users" as "B" on "A"."user_id" = "B"."id" and "B"."name" = ?',
+            $sql
+        );
+        $this->assertSame(['Alice'], $query->getBindings());
+    }
+
+    /**
+     * Ensure the resolver uses the description returned by the model hook.
+     *
+     * @return void
+     */
+    public function test_model_returned_description_is_authoritative(): void
+    {
+        $query = Agent::query()->select('returnedNamedUser.name');
 
         $sql = $this->debugSql($query);
 

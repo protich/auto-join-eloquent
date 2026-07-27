@@ -47,6 +47,17 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      */
     protected array $autoJoinedRelations = [];
 
+    /**
+     * Relationship descriptions resolved for the current join chains.
+     *
+     * A description carries both the Eloquent relationship and any
+     * model-authored constraints. Caching it ensures each chain is described
+     * only once even when several query clauses reference the same join.
+     *
+     * @var array<string,AutoJoinRelation>
+     */
+    protected array $resolvedRelationships = [];
+
 
     /**
      * The default join type (e.g., 'left' or 'inner').
@@ -683,9 +694,10 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     /**
      * Resolve a column expression that requires auto-joining.
      *
-     * Given a parsed relationship chain (from parseColumnChain()), this method iterates over each segment,
-     * validates that the relationship exists using getValidRelation(), and then creates a JoinContext
-     * (via JoinClauseInfo::buildJoinContext()) to delegate join processing.
+     * Given a parsed relationship chain (from parseColumnChain()), this method
+     * asks each model to resolve and describe its relationship, then creates a
+     * JoinContext (via JoinClauseInfo::buildJoinContext()) to delegate join
+     * processing.
      * If the join has not yet been applied, it processes the join (pivot or normal) via processAutoJoin().
      * Finally, it builds the fully qualified column expression using the alias from the final join.
      *
@@ -713,18 +725,21 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             $chainKeyParts[] = $relationName;
             $chainKey = implode('__', $chainKeyParts);
 
-            // Validate that the current model's relation method exists and returns a valid relationship.
-            $relation = $this->getValidRelation($currentModel, $relationName);
+            if (isset($this->resolvedRelationships[$chainKey])) {
+                $autoJoinRelation = $this->resolvedRelationships[$chainKey];
+            } else {
+                $autoJoinRelation = $this->resolveRelationship(
+                    $currentModel,
+                    $relationName,
+                    $path
+                );
+                $this->resolvedRelationships[$chainKey] = $autoJoinRelation;
+            }
+
+            $relation = $autoJoinRelation->relation();
 
             // If this join has not yet been applied, process it.
             if (!in_array($chainKey, $this->autoJoinedRelations)) {
-                $autoJoinRelation = $this->resolveComplexRelationship(
-                    $currentModel,
-                    $relationName,
-                    $relation,
-                    $path
-                );
-
                 // Build a join context object from the relation using JoinClauseInfo.
                 $joinContext = JoinClauseInfo::buildJoinContext($relation,
                     $chainKey,
@@ -1068,89 +1083,46 @@ class AutoJoinQueryBuilder extends EloquentBuilder
 
         return new Expression($expression);
     }
-
-
-
     /**
-     * Verify that the given model has a valid relationship method and return the relation instance.
+     * Ask the model to resolve and describe a relationship.
      *
-     * The relationship is created with Eloquent's automatic parent-key
-     * constraints disabled. Model-authored conditions remain on the relation
-     * so JoinComplexity can decide whether model input is required.
-     *
-     * @param  Model   $model        Model that owns the relationship method.
-     * @param  string  $relationName Relationship method name.
-     * @return Relation
-     *
-     * @throws \Exception If the method is missing or does not return a
-     *                    relationship.
-     */
-    protected function getValidRelation($model, string $relationName): Relation
-    {
-        // Ensure the current model has the method.
-        if (!method_exists($model, $relationName)) {
-            throw new \Exception("Method {$relationName} does not exist on " . get_class($model));
-        }
-
-        // Disable only Eloquent's automatic parent-key constraints. Any
-        // model-authored query state remains available for complexity detection.
-        $relation = Relation::noConstraints(
-            fn () => $model->{$relationName}()
-        );
-
-        // Ensure that the returned value is a valid Eloquent relationship.
-        if (!$relation instanceof Relation) {
-            throw new \Exception("Method {$relationName} on " . get_class($model) . " is not a relationship.");
-        }
-
-        return $relation;
-    }
-
-    /**
-     * Ask the model to describe a relationship only when its query contains
-     * constraints that cannot be derived from standard relation metadata.
-     *
-     * Normal relationships return an empty AutoJoinRelation without invoking
-     * the model hook. Complex relationships invoke describeAutoJoinRelation()
-     * and must result in at least one normalized constraint.
+     * Every relationship returns a description carrying the original Eloquent
+     * relation. JoinComplexity determines whether an empty description is
+     * acceptable; complex relationships must describe at least one normalized
+     * constraint.
      *
      * @param  Model     $model        Model that owns the relationship.
      * @param  string    $relationName Relationship method name.
-     * @param  Relation  $relation     Unconstrained Eloquent relationship.
      * @param  string    $path         Complete normalized query path.
      * @return AutoJoinRelation
      *
-     * @throws \RuntimeException If the model hook is missing or does not
-     *                           describe any constraints.
+     * @throws \RuntimeException If the model returns an invalid description or
+     *                           leaves a complex relationship undescribed.
      */
-    protected function resolveComplexRelationship(
+    protected function resolveRelationship(
         Model $model,
         string $relationName,
-        Relation $relation,
         string $path
     ): AutoJoinRelation {
-        $autoJoinRelation = new AutoJoinRelation($relation);
+        $description = $this->callModelHook(
+            $model,
+            'describeAutoJoinRelation',
+            [$relationName, $path]
+        );
 
-        if (! JoinComplexity::isComplex($relation)) {
-            return $autoJoinRelation;
-        }
-
-        if (! method_exists($model, 'describeAutoJoinRelation')) {
+        if (! $description instanceof AutoJoinRelation) {
             throw new \RuntimeException(sprintf(
-                'Complex auto-join relation [%s] on model [%s] requires describeAutoJoinRelation() for path [%s].',
-                $relationName,
+                'Model [%s] returned an invalid description for complex auto-join relation [%s] on path [%s].',
                 $model::class,
+                $relationName,
                 $path
             ));
         }
 
-        $model->describeAutoJoinRelation(
-            $autoJoinRelation,
-            $relationName,
-            $path
-        );
-
-        if (! $autoJoinRelation->hasConstraints()) {
+        if (
+            JoinComplexity::isComplex($description->relation())
+            && ! $description->hasConstraints()
+        ) {
             throw new \RuntimeException(sprintf(
                 'Model [%s] did not describe constraints for complex auto-join relation [%s] on path [%s].',
                 $model::class,
@@ -1159,7 +1131,26 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             ));
         }
 
-        return $autoJoinRelation;
+        return $description;
+    }
+
+    /**
+     * Invoke a hook supplied by an auto-join model.
+     *
+     * Models using the auto-join traits are expected to provide the requested
+     * hook. The caller validates the hook's returned value.
+     *
+     * @param  Model        $model
+     * @param  string       $method
+     * @param  array<mixed> $arguments
+     * @return mixed
+     */
+    protected function callModelHook(
+        Model $model,
+        string $method,
+        array $arguments
+    ): mixed {
+        return $model->{$method}(...$arguments);
     }
 
     /**
@@ -1278,6 +1269,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         // rewritten expressions are not left on the pre-scope query.
         if ($this->getQuery() !== $query) {
             $this->autoJoinedRelations = [];
+            $this->resolvedRelationships = [];
             $this->aliasManager = new JoinAliasManager($this->useSimpleAliases);
             $this->selectAliases = [];
             $this->subqueryCounter = 0;
