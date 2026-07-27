@@ -118,6 +118,86 @@ $results = User::query()
 
 This query compiles the raw SQL and correctly applies the aggregate condition.
 
+### Model-Defined Paths
+
+Expressions beginning with `model__` are delegated to the base model as one
+complete path. The package does not split or interpret the path before calling
+the model.
+
+```php
+use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
+use protich\AutoJoinEloquent\Model\PathRequest;
+
+public static function describeAutoJoinPath(
+    PathRequest $request
+): ExpressionDescriptor {
+    return match ($request->path) {
+        'model__status' => ExpressionDescriptor::path('flags'),
+
+        'model__accessibleDepartments__id__count' =>
+            ExpressionDescriptor::count([
+                'departments.id',
+                'groups.departments.id',
+            ], distinct: true),
+
+        default => throw new \RuntimeException(sprintf(
+            'Unsupported auto-join path [%s].',
+            $request->path
+        )),
+    };
+}
+```
+
+The returned `ExpressionDescriptor` tells the package how to compile the
+logical expression. Models only need this hook for paths carrying the
+`model__` marker.
+
+### Complex Relationships
+
+Standard Eloquent relationship metadata is resolved automatically. When a
+relationship contains additional query constraints, the package asks the model
+to describe only those constraints:
+
+```php
+use protich\AutoJoinEloquent\Model\AutoJoinRelation;
+
+public function activeAssignments()
+{
+    return $this->hasMany(Assignment::class)
+        ->where('assignments.status', 'active');
+}
+
+public function describeAutoJoinRelation(
+    AutoJoinRelation $autoJoinRelation,
+    string $name,
+    string $path
+): void {
+    if ($name === 'activeAssignments') {
+        $autoJoinRelation->whereRelated('status', 'active');
+        return;
+    }
+
+    throw new \RuntimeException(sprintf(
+        'Unsupported complex auto-join relation [%s] for [%s].',
+        $name,
+        $path
+    ));
+}
+```
+
+`AutoJoinRelation` supports constraints targeting the related, parent, or pivot
+table through `whereRelated()`, `whereParent()`, and `wherePivot()`, with
+corresponding null helpers. Constraint values are added to the join as query
+bindings.
+
+The model's relationship description is authoritative. It must include every
+row-affecting condition that is not part of standard Eloquent relationship key
+metadata. The package rejects an empty description for a complex relationship,
+but it does not attempt to prove that a description is equivalent to arbitrary
+query-builder state. If a relationship uses a condition that
+`AutoJoinRelation` cannot express, the model hook should throw rather than
+provide a partial description.
+
 ## Configuration
 
 You can configure default behavior via the package configuration file (if published):
@@ -158,7 +238,12 @@ You can run the test suite using one of the following methods:
   Centralizes join alias resolution by generating sequential aliases (or using forced custom aliases defined in models) and preventing collisions. All alias mapping logic is managed in this component.
 
 - **Join Helpers:**
-  Classes such as `JoinClauseInfo` and `JoinContext` encapsulate join clause information and context for building JOIN statements.
+  Classes such as `JoinClauseInfo`, `JoinContext`, and `JoinComplexity` encapsulate join metadata, context, and complex-relation detection.
+
+- **Model API:**
+  `PathRequest`, `ExpressionDescriptor`, and `AutoJoinRelation` provide the
+  small public API used by model hooks. These classes live under the
+  `protich\AutoJoinEloquent\Model` namespace.
 
 - **Compilers:**
   Components like `SelectCompiler`, `WhereCompiler`, `HavingCompiler`, `OrderByCompiler`, and `GroupByCompiler` compile various parts of the query by interpreting relationship chains and applying alias logic.
@@ -183,4 +268,3 @@ This package is open-source software licensed under the [MIT License](LICENSE).
 
 For more details, visit the project repository:
 [https://github.com/protich/auto-join-eloquent](https://github.com/protich/auto-join-eloquent)
-
