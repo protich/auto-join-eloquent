@@ -1273,6 +1273,19 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         Query $query,
         ?string $queryCompilerClass = null
     ): void {
+        // Eloquent applies global scopes to a cloned query builder. Compile
+        // against the active clone passed to the callback so joins and
+        // rewritten expressions are not left on the pre-scope query.
+        if ($this->getQuery() !== $query) {
+            $this->autoJoinedRelations = [];
+            $this->aliasManager = new JoinAliasManager($this->useSimpleAliases);
+            $this->selectAliases = [];
+            $this->subqueryCounter = 0;
+            $this->debugLog = [];
+        }
+
+        $this->setQuery($query);
+
         $grammar = $this->getGrammar();
         $from = $query->from;
 
