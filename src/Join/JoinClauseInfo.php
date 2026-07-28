@@ -34,10 +34,18 @@ class JoinClauseInfo
      *
      * @param  \Illuminate\Database\Eloquent\Relations\Relation  $relation
      * @param  string  $joinType  The join type to use (defaults to 'left').
+     *
+     * @throws \InvalidArgumentException If the relationship type is unsupported.
      */
     public function __construct(Relation $relation, string $joinType = 'left')
     {
-        $this->relation = $relation;
+        $this->relation = match (true) {
+            $relation instanceof BelongsTo,
+            $relation instanceof HasOne,
+            $relation instanceof HasMany,
+            $relation instanceof BelongsToMany => $relation,
+            default => throw self::unsupportedRelationship($relation),
+        };
         $this->joinType = $joinType;
     }
 
@@ -186,7 +194,7 @@ class JoinClauseInfo
                     'owner'   => $relation->getQualifiedRelatedPivotKeyName(),
                 ];
             default:
-                throw new \Exception("Unsupported relationship type: " . get_class($relation));
+                throw self::unsupportedRelationship($relation);
         }
     }
 
@@ -395,5 +403,21 @@ class JoinClauseInfo
             $currentAlias,
             $autoJoinRelation
         );
+    }
+
+    /**
+     * Build the exception used for an unsupported Eloquent relationship.
+     *
+     * @param  Relation  $relation
+     * @return \InvalidArgumentException
+     */
+    private static function unsupportedRelationship(
+        Relation $relation
+    ): \InvalidArgumentException {
+        return new \InvalidArgumentException(sprintf(
+            'Unsupported auto-join relationship type [%s]. Supported types '
+                . 'are BelongsTo, HasOne, HasMany, and BelongsToMany.',
+            $relation::class
+        ));
     }
 }

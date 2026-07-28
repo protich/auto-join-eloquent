@@ -4,6 +4,7 @@ namespace protich\AutoJoinEloquent\Tests\Models;
 
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use protich\AutoJoinEloquent\Model\AutoJoinRelation;
 use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
 use protich\AutoJoinEloquent\Model\PathRequest;
@@ -219,6 +220,23 @@ class Agent extends BaseModel
             'agent_id',
             'department_id'
         )->wherePivot('assigned_at', '>=', '2025-01-01');
+    }
+
+    /**
+     * An unsupported through relation used to verify explicit failures.
+     *
+     * @return HasManyThrough<Department, User, $this>
+     */
+    public function departmentsThroughUser(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            Department::class,
+            User::class,
+            'id',
+            'manager_id',
+            'user_id',
+            'id'
+        );
     }
 
     /**
