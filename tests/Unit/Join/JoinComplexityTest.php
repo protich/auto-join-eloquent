@@ -2,6 +2,7 @@
 
 namespace protich\AutoJoinEloquent\Tests\Unit\Join;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use protich\AutoJoinEloquent\Join\JoinComplexity;
@@ -44,14 +45,15 @@ class JoinComplexityTest extends AutoJoinTestCase
      */
     public function test_row_affecting_query_state_is_complex(): void
     {
+        /** @var list<\Closure(Builder<Model>): mixed> $mutators */
         $mutators = [
-            fn ($query) => $query->where('users.name', 'Alice'),
-            fn ($query) => $query->groupBy('users.name'),
-            fn ($query) => $query->having('users.id', '>', 0),
-            fn ($query) => $query->limit(1),
-            fn ($query) => $query->offset(1),
-            fn ($query) => $query->distinct(),
-            fn ($query) => $query->lockForUpdate(),
+            fn (Builder $query) => $query->where('users.name', 'Alice'),
+            fn (Builder $query) => $query->groupBy('users.name'),
+            fn (Builder $query) => $query->having('users.id', '>', 0),
+            fn (Builder $query) => $query->limit(1),
+            fn (Builder $query) => $query->offset(1),
+            fn (Builder $query) => $query->distinct(),
+            fn (Builder $query) => $query->lockForUpdate(),
         ];
 
         foreach ($mutators as $mutate) {
@@ -96,7 +98,7 @@ class JoinComplexityTest extends AutoJoinTestCase
 
         $builder->withGlobalScope(
             'available',
-            fn ($query) => $query->whereNull('users.deleted_at')
+            fn (Builder $query) => $query->whereNull('users.deleted_at')
         );
 
         $this->assertSame([], $builder->getQuery()->wheres);
@@ -119,6 +121,9 @@ class JoinComplexityTest extends AutoJoinTestCase
         $this->assertTrue(JoinComplexity::isComplex($relation));
 
         $joins = $query->joins;
+        if ($joins === null || count($joins) < 2) {
+            $this->fail('Expected the relation query to contain two joins.');
+        }
         $query->joins = [$joins[1]];
 
         $this->assertTrue(JoinComplexity::isComplex($relation));
@@ -133,8 +138,18 @@ class JoinComplexityTest extends AutoJoinTestCase
      */
     private function relation(Model $model, string $method): Relation
     {
-        return Relation::noConstraints(
+        $relation = Relation::noConstraints(
             fn () => $model->{$method}()
         );
+
+        if (!$relation instanceof Relation) {
+            throw new \LogicException(sprintf(
+                'Model method [%s::%s] did not return a relationship.',
+                $model::class,
+                $method
+            ));
+        }
+
+        return $relation;
     }
 }

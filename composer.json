@@ -47,7 +47,8 @@
   },
   "scripts": {
     "test": "./vendor/bin/phpunit",
-    "phpstan": "phpstan analyse"
+    "phpstan": "phpstan analyse",
+    "phpstan:model-api": "phpstan analyse --configuration=phpstan.model-api.neon --no-progress"
   },
   "config": {
     "allow-plugins": {
