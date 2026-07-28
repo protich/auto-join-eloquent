@@ -33,6 +33,16 @@ Install via Composer:
 composer require protich/auto-join-eloquent
 ```
 
+### Requirements
+
+- PHP 8.3
+- Illuminate Database 13
+
+Version 0.10 supports `BelongsTo`, `HasOne`, `HasMany`, and
+`BelongsToMany` relationships. Other Eloquent relationship types, including
+`HasOneThrough` and `HasManyThrough`, fail with an explicit unsupported-type
+exception before join compilation.
+
 ## Usage
 
 ### Enabling Auto Join
@@ -154,9 +164,10 @@ logical expression. Models only need this hook for paths carrying the
 
 ### Complex Relationships
 
-Standard Eloquent relationship metadata is resolved automatically. When a
-relationship contains additional query constraints, the package asks the model
-to describe only those constraints:
+Standard Eloquent relationship metadata is resolved automatically. The package
+asks the owning model to resolve every named relationship and return an
+`AutoJoinRelation`. Relationships containing additional query constraints must
+describe those constraints:
 
 ```php
 use protich\AutoJoinEloquent\Model\AutoJoinRelation;
@@ -197,6 +208,11 @@ arbitrary query-builder state. If a relationship uses a condition that
 `AutoJoinRelation` cannot express, the model hook should throw rather than
 provide a partial description.
 
+## Upgrading
+
+Version 0.10 introduces breaking model API and runtime changes. Applications
+upgrading from 0.9 should follow [UPGRADING.md](UPGRADING.md).
+
 ## Configuration
 
 You can configure default behavior via the package configuration file (if published):
@@ -226,6 +242,13 @@ You can run the test suite using one of the following methods:
   Alternatively, run PHPUnit directly:
 ```bash
   ./vendor/bin/phpunit
+```
+
+The model-facing descriptor and relationship-complexity API has a focused
+maximum-strictness PHPStan check:
+
+```bash
+composer phpstan:model-api
 ```
 
 ## Internal Architecture
