@@ -19,11 +19,12 @@ use Throwable;
 trait AutoJoinQueryBuilderTrait
 {
     /**
-     * Describe a complete path carrying the reserved `model__` marker.
+     * Describe a complete application-defined path.
      *
      * Models override this hook only when they expose model-defined paths. The
-     * request contains the complete expression so the package does not impose
-     * application-specific segmentation rules.
+     * request contains the complete expression without the auto-joiner's
+     * reserved marker, so the package does not impose application-specific
+     * segmentation rules.
      *
      * @param  PathRequest  $request
      * @return ExpressionDescriptor
@@ -50,7 +51,8 @@ trait AutoJoinQueryBuilderTrait
      * implementation.
      *
      * @param  string  $name Relationship method name.
-     * @param  string  $path Complete normalized path that triggered the join.
+     * @param  string  $path Complete path that triggered the join. Model-defined
+     *                      paths do not include the reserved marker.
      * @return AutoJoinRelation Authoritative relationship description.
      *
      * @throws RuntimeException When the relationship cannot be resolved or

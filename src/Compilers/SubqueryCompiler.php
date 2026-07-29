@@ -112,11 +112,14 @@ class SubqueryCompiler extends BaseCompiler
      * and correlates the inner query to the current outer row using the
      * base model key.
      *
-     * @param  string $path
+     * @param  string      $path
+     * @param  string|null $relationshipPath
      * @return \Illuminate\Database\Query\Builder
      */
-    protected function buildPathSelectSubquery(string $path)
-    {
+    protected function buildPathSelectSubquery(
+        string $path,
+        ?string $relationshipPath = null
+    ) {
         $path = trim($path);
 
         if ($path === '') {
@@ -131,7 +134,25 @@ class SubqueryCompiler extends BaseCompiler
         $innerAlias = $builder->getBaseAlias();
         $innerKey   = $builder->getBaseModel()->getKeyName();
 
-        $builder->select($path);
+        $column = $this->normalizeColumn($path);
+        $resolved = $builder->resolveColumnExpression(
+            $column,
+            null,
+            false,
+            $relationshipPath
+        );
+        $resolvedSql = $resolved->getValue($grammar);
+
+        if (! is_string($resolvedSql)) {
+            throw new RuntimeException(sprintf(
+                'Resolved subquery path [%s] did not produce SQL.',
+                $path
+            ));
+        }
+
+        $builder->select(
+            new CompiledExpression($resolvedSql)
+        );
 
         $builder->whereRaw(sprintf(
             '%s.%s = %s.%s',
@@ -157,12 +178,18 @@ class SubqueryCompiler extends BaseCompiler
      * The returned expression is wrapped and intended for use anywhere a
      * final subquery expression is required.
      *
-     * @param  string $path
+     * @param  string      $path
+     * @param  string|null $relationshipPath
      * @return SubQueryExpression
      */
-    public function compilePathSelectSubquery(string $path): SubQueryExpression
-    {
-        $subquery = $this->compilePathSelectSubquerySqlExpression($path);
+    public function compilePathSelectSubquery(
+        string $path,
+        ?string $relationshipPath = null
+    ): SubQueryExpression {
+        $subquery = $this->compilePathSelectSubquerySqlExpression(
+            $path,
+            $relationshipPath
+        );
 
         return new SubQueryExpression(sprintf(
             '(%s)',
@@ -176,25 +203,36 @@ class SubqueryCompiler extends BaseCompiler
      * The returned SQL is not wrapped in outer parentheses and is intended
      * for use in UNION composition.
      *
-     * @param  string $path
+     * @param  string      $path
+     * @param  string|null $relationshipPath
      * @return string
      */
-    public function compilePathSelectSubquerySql(string $path): string
-    {
-        return $this->compilePathSelectSubquerySqlExpression($path)
+    public function compilePathSelectSubquerySql(
+        string $path,
+        ?string $relationshipPath = null
+    ): string {
+        return $this->compilePathSelectSubquerySqlExpression(
+            $path,
+            $relationshipPath
+        )
             ->sql();
     }
 
     /**
      * Compile raw subquery SQL together with its ordered bindings.
      *
-     * @param  string  $path
+     * @param  string      $path
+     * @param  string|null $relationshipPath
      * @return SubQueryExpression
      */
     public function compilePathSelectSubquerySqlExpression(
-        string $path
+        string $path,
+        ?string $relationshipPath = null
     ): SubQueryExpression {
-        $query = $this->buildPathSelectSubquery($path);
+        $query = $this->buildPathSelectSubquery(
+            $path,
+            $relationshipPath
+        );
 
         return new SubQueryExpression(
             $query->toSql(),
@@ -222,24 +260,31 @@ class SubqueryCompiler extends BaseCompiler
      *   )
      *
      * @param  array<int,string> $paths
+     * @param  string|null       $relationshipPath
      * @return string
      */
-    public function compileExistsCountSubquerySql(array $paths): string
-    {
-        return $this->compileExistsCountSubquery($paths)
+    public function compileExistsCountSubquerySql(
+        array $paths,
+        ?string $relationshipPath = null
+    ): string {
+        return $this->compileExistsCountSubquery(
+            $paths,
+            $relationshipPath
+        )
             ->sql();
     }
 
     /**
      * Compile a binding-aware target-anchored EXISTS count subquery.
      *
-     * @param  array<int,string>  $paths
+     * @param  array<int,string> $paths
+     * @param  string|null       $relationshipPath
      * @return SubQueryExpression
      */
     public function compileExistsCountSubquery(
-        array $paths
-    ): SubQueryExpression
-    {
+        array $paths,
+        ?string $relationshipPath = null
+    ): SubQueryExpression {
         if ($paths === []) {
             throw new RuntimeException(
                 'EXISTS count subquery requires at least one path.'
@@ -255,7 +300,8 @@ class SubqueryCompiler extends BaseCompiler
             fn (string $path) => $this->compilePathExistsPredicateSql(
                 $path,
                 $alias,
-                $target['field']
+                $target['field'],
+                $relationshipPath
             ),
             $paths
         );
@@ -297,15 +343,17 @@ class SubqueryCompiler extends BaseCompiler
      *       and terminal_value = target_alias.target_field
      *   )
      *
-     * @param  string $path
-     * @param  string $targetAlias
-     * @param  string $targetField
+     * @param  string      $path
+     * @param  string      $targetAlias
+     * @param  string      $targetField
+     * @param  string|null $relationshipPath
      * @return SubQueryExpression
      */
     protected function compilePathExistsPredicateSql(
         string $path,
         string $targetAlias,
-        string $targetField
+        string $targetField,
+        ?string $relationshipPath = null
     ): SubQueryExpression {
         $path = trim($path);
 
@@ -319,7 +367,12 @@ class SubqueryCompiler extends BaseCompiler
         $grammar = $builder->getGrammar();
 
         $column = $this->normalizeColumn($path);
-        $resolved = $builder->resolveColumnExpression($column, null, false);
+        $resolved = $builder->resolveColumnExpression(
+            $column,
+            null,
+            false,
+            $relationshipPath
+        );
         $terminal = $resolved instanceof Expression
             ? $resolved->getValue($grammar) // @phpstan-ignore-line
             : (string) $resolved;

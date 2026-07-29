@@ -10,13 +10,13 @@ use InvalidArgumentException;
  * The complete model-defined path submitted to a model hook.
  *
  * The path is deliberately kept intact so the auto-joiner does not interpret
- * application-defined segments. Models receive the reserved `model__` marker
- * and decide how the complete expression should be described.
+ * application-defined segments. The auto-joiner removes its reserved marker
+ * before constructing the request.
  */
 final readonly class PathRequest
 {
     /**
-     * Complete model-defined path, including the `model__` marker.
+     * Complete application-defined path without the auto-join marker.
      *
      * @var non-empty-string
      */
@@ -27,18 +27,16 @@ final readonly class PathRequest
      *
      * @param  string  $path
      *
-     * @throws InvalidArgumentException If the path does not contain a name
-     *                                  after the `model__` marker.
+     * @throws InvalidArgumentException If the path is empty.
      */
     public function __construct(string $path)
     {
         $path = trim($path);
 
-        if (! str_starts_with($path, 'model__') || $path === 'model__') {
-            throw new InvalidArgumentException(sprintf(
-                'Auto-join model path [%s] must begin with [model__].',
-                $path
-            ));
+        if ($path === '') {
+            throw new InvalidArgumentException(
+                'Auto-join model path must not be empty.'
+            );
         }
 
         $this->path = $path;

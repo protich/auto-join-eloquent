@@ -55,8 +55,7 @@ class Agent extends BaseModel
     /**
      * Describe a model-defined auto-join path.
      *
-     * This acts as the entry point for resolving `model__*` paths
-     * into descriptor definitions understood by the auto-join compiler.
+     * The auto-joiner removes its marker before delegating the complete path.
      *
      * @param  PathRequest  $request
      * @return ExpressionDescriptor
@@ -67,22 +66,29 @@ class Agent extends BaseModel
         PathRequest $request
     ): ExpressionDescriptor {
         return match ($request->path) {
-            'model__status' => ExpressionDescriptor::path('flags'),
-            'model__accessibleDepartments__id__count' => ExpressionDescriptor::count(
+            'status' => ExpressionDescriptor::path('flags'),
+            'userNamed__Alice',
+            'userNamed__Bob' => ExpressionDescriptor::path(
+                'userByName.name'
+            ),
+            'userNamed__Alice__count' => ExpressionDescriptor::count(
+                'userByName.id'
+            ),
+            'accessibleDepartments__id__count' => ExpressionDescriptor::count(
                 [
                     'departments.id',
                     'groups.departments.id',
                 ],
                 distinct: true
             ),
-            'model__qualifiedDepartmentCount' => ExpressionDescriptor::count(
+            'qualifiedDepartmentCount' => ExpressionDescriptor::count(
                 [
                     'qualifiedDepartments.id',
                     'groups.qualifiedDepartments.id',
                 ],
                 distinct: true
             ),
-            'model__mixedComplexCount' => ExpressionDescriptor::count(
+            'mixedComplexCount' => ExpressionDescriptor::count(
                 [
                     'assignedDepartments.id',
                     'departments.id',
@@ -131,8 +137,25 @@ class Agent extends BaseModel
                 ->wherePivotNull('assigned_at'),
             'qualifiedDepartments' => $description
                 ->whereRelated('name', 'Support'),
+            'userByName' => str_starts_with(
+                $path,
+                'userNamed__'
+            ) ? $description->whereRelated(
+                'name',
+                explode('__', $path)[1] ?? ''
+            ) : $description,
             default => $description,
         };
+    }
+
+    /**
+     * Get the agent's user for a model-defined name constraint.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function userByName(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
     }
 
     /**

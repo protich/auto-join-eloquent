@@ -101,7 +101,9 @@ class JoinAliasManager
      * If not, it generates a new alias. When simple alias generation is enabled,
      * it uses sequential aliases (A, B, C, …, then A1, B1, etc.), ensuring no duplicates.
      * Otherwise, it uses the provided default or falls back to the key itself.
-     * The resolved alias is stored in the alias map and returned.
+     * If that alias is already assigned, the relationship key and then a
+     * numeric suffix are used to keep aliases unique. The resolved alias is
+     * stored in the alias map and returned.
      *
      * @param string      $key     The mapping key (e.g. a relationship chain or table name).
      * @param string|null $default Optional default alias if none is set.
@@ -126,7 +128,20 @@ class JoinAliasManager
 
                 $this->aliasMap[$key] = $alias;
             } else {
-                $this->aliasMap[$key] = $default ?? $key;
+                $alias = $default ?? $key;
+
+                if (in_array($alias, $this->aliasMap, true)) {
+                    $alias = $key;
+                }
+
+                $suffix = 2;
+                $candidate = $alias;
+
+                while (in_array($candidate, $this->aliasMap, true)) {
+                    $candidate = sprintf('%s_%d', $alias, $suffix++);
+                }
+
+                $this->aliasMap[$key] = $candidate;
             }
         }
 
