@@ -33,6 +33,16 @@ Install via Composer:
 composer require protich/auto-join-eloquent
 ```
 
+### Requirements
+
+- PHP 8.3
+- Illuminate Database 13
+
+Version 0.10 supports `BelongsTo`, `HasOne`, `HasMany`, and
+`BelongsToMany` relationships. Other Eloquent relationship types, including
+`HasOneThrough` and `HasManyThrough`, fail with an explicit unsupported-type
+exception before join compilation.
+
 ## Usage
 
 ### Enabling Auto Join
@@ -118,6 +128,91 @@ $results = User::query()
 
 This query compiles the raw SQL and correctly applies the aggregate condition.
 
+### Model-Defined Paths
+
+Expressions beginning with `model__` are delegated to the base model as one
+complete path. The package does not split or interpret the path before calling
+the model.
+
+```php
+use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
+use protich\AutoJoinEloquent\Model\PathRequest;
+
+public static function describeAutoJoinPath(
+    PathRequest $request
+): ExpressionDescriptor {
+    return match ($request->path) {
+        'model__status' => ExpressionDescriptor::path('flags'),
+
+        'model__accessibleDepartments__id__count' =>
+            ExpressionDescriptor::count([
+                'departments.id',
+                'groups.departments.id',
+            ], distinct: true),
+
+        default => throw new \RuntimeException(sprintf(
+            'Unsupported auto-join path [%s].',
+            $request->path
+        )),
+    };
+}
+```
+
+The returned `ExpressionDescriptor` tells the package how to compile the
+logical expression. Models only need this hook for paths carrying the
+`model__` marker.
+
+### Complex Relationships
+
+Standard Eloquent relationship metadata is resolved automatically. The package
+asks the owning model to resolve every named relationship and return an
+`AutoJoinRelation`. Relationships containing additional query constraints must
+describe those constraints:
+
+```php
+use protich\AutoJoinEloquent\Model\AutoJoinRelation;
+
+public function activeAssignments()
+{
+    return $this->hasMany(Assignment::class)
+        ->where('assignments.status', 'active');
+}
+
+public function describeAutoJoinRelation(
+    string $name,
+    string $path
+): AutoJoinRelation {
+    $description = parent::describeAutoJoinRelation($name, $path);
+
+    return match ($name) {
+        'activeAssignments' => $description
+            ->whereRelated('status', 'active'),
+        default => $description,
+    };
+}
+```
+
+`AutoJoinRelation` supports constraints targeting the related, parent, or pivot
+table through `whereRelated()`, `whereParent()`, and `wherePivot()`, with
+corresponding null helpers. Constraint values are added to the join as query
+bindings.
+
+The base implementation verifies the named relationship, resolves it, and
+creates an empty description. The auto-joiner asks the model for this
+description for every relationship. `JoinComplexity` determines whether an
+empty result is valid: complex relationships must include every row-affecting
+condition that is not part of standard Eloquent relationship key metadata.
+
+The package does not attempt to prove that a description is equivalent to
+arbitrary query-builder state. If a relationship uses a condition that
+`AutoJoinRelation` cannot express, the model hook should throw rather than
+provide a partial description.
+
+## Upgrading
+
+Version 0.10 introduces breaking model API and runtime changes. Applications
+upgrading from 0.9 should follow [UPGRADING.md](UPGRADING.md).
+
 ## Configuration
 
 You can configure default behavior via the package configuration file (if published):
@@ -149,6 +244,13 @@ You can run the test suite using one of the following methods:
   ./vendor/bin/phpunit
 ```
 
+The model-facing descriptor and relationship-complexity API has a focused
+maximum-strictness PHPStan check:
+
+```bash
+composer phpstan:model-api
+```
+
 ## Internal Architecture
 
 - **AutoJoinQueryBuilder:**
@@ -158,7 +260,12 @@ You can run the test suite using one of the following methods:
   Centralizes join alias resolution by generating sequential aliases (or using forced custom aliases defined in models) and preventing collisions. All alias mapping logic is managed in this component.
 
 - **Join Helpers:**
-  Classes such as `JoinClauseInfo` and `JoinContext` encapsulate join clause information and context for building JOIN statements.
+  Classes such as `JoinClauseInfo`, `JoinContext`, and `JoinComplexity` encapsulate join metadata, context, and complex-relation detection.
+
+- **Model API:**
+  `PathRequest`, `ExpressionDescriptor`, and `AutoJoinRelation` provide the
+  small public API used by model hooks. These classes live under the
+  `protich\AutoJoinEloquent\Model` namespace.
 
 - **Compilers:**
   Components like `SelectCompiler`, `WhereCompiler`, `HavingCompiler`, `OrderByCompiler`, and `GroupByCompiler` compile various parts of the query by interpreting relationship chains and applying alias logic.
@@ -183,4 +290,3 @@ This package is open-source software licensed under the [MIT License](LICENSE).
 
 For more details, visit the project repository:
 [https://github.com/protich/auto-join-eloquent](https://github.com/protich/auto-join-eloquent)
-

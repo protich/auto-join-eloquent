@@ -2,9 +2,15 @@
 
 namespace protich\AutoJoinEloquent\Join;
 
-use protich\AutoJoinEloquent\Join\JoinClauseInfo;
 use Illuminate\Database\Eloquent\Model;
+use protich\AutoJoinEloquent\Model\AutoJoinRelation;
 
+/**
+ * Class: JoinContext
+ *
+ * Carry the relationship metadata, current model state, aliases, and
+ * model-described constraints required to compile one join in a path.
+ */
 class JoinContext
 {
     /**
@@ -42,6 +48,15 @@ class JoinContext
      */
     protected string $relationName;
 
+    /**
+     * Model-provided constraints for a complex relationship.
+     *
+     * The object is present for every join and remains empty for a normal
+     * relationship.
+     *
+     * @var AutoJoinRelation
+     */
+    protected AutoJoinRelation $autoJoinRelation;
 
     /**
      * Constructor.
@@ -50,13 +65,22 @@ class JoinContext
      * @param string         $chainKey   The cumulative join key (e.g., "agent__departments").
      * @param Model          $model      The current model instance.
      * @param string         $modelAlias The alias for the current model's table.
+     * @param AutoJoinRelation $autoJoinRelation Model-described constraints,
+     *                                           or an empty description for a
+     *                                           normal relationship.
      */
-    public function __construct(JoinClauseInfo $joinInfo, string $chainKey, Model $model, string $modelAlias)
-    {
+    public function __construct(
+        JoinClauseInfo $joinInfo,
+        string $chainKey,
+        Model $model,
+        string $modelAlias,
+        AutoJoinRelation $autoJoinRelation
+    ) {
         $this->joinInfo = $joinInfo;
         $this->chainKey = $chainKey;
         $this->model = $model;
         $this->modelAlias = $modelAlias;
+        $this->autoJoinRelation = $autoJoinRelation;
     }
 
     /**
@@ -97,6 +121,16 @@ class JoinContext
     public function getModelAlias(): string
     {
         return $this->modelAlias;
+    }
+
+    /**
+     * Get the model-facing relationship description for this join.
+     *
+     * @return AutoJoinRelation
+     */
+    public function getAutoJoinRelation(): AutoJoinRelation
+    {
+        return $this->autoJoinRelation;
     }
 
     /**

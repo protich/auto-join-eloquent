@@ -2,7 +2,6 @@
 
 namespace protich\AutoJoinEloquent\Join;
 
-use Exception;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Database\Query\Grammars\Grammar;
 
-use  protich\AutoJoinEloquent\Join\JoinContext;
+use protich\AutoJoinEloquent\Model\AutoJoinRelation;
 
 class JoinClauseInfo
 {
@@ -35,10 +34,18 @@ class JoinClauseInfo
      *
      * @param  \Illuminate\Database\Eloquent\Relations\Relation  $relation
      * @param  string  $joinType  The join type to use (defaults to 'left').
+     *
+     * @throws \InvalidArgumentException If the relationship type is unsupported.
      */
     public function __construct(Relation $relation, string $joinType = 'left')
     {
-        $this->relation = $relation;
+        $this->relation = match (true) {
+            $relation instanceof BelongsTo,
+            $relation instanceof HasOne,
+            $relation instanceof HasMany,
+            $relation instanceof BelongsToMany => $relation,
+            default => throw self::unsupportedRelationship($relation),
+        };
         $this->joinType = $joinType;
     }
 
@@ -187,7 +194,7 @@ class JoinClauseInfo
                     'owner'   => $relation->getQualifiedRelatedPivotKeyName(),
                 ];
             default:
-                throw new \Exception("Unsupported relationship type: " . get_class($relation));
+                throw self::unsupportedRelationship($relation);
         }
     }
 
@@ -328,74 +335,20 @@ class JoinClauseInfo
     }
 
     /**
-     * Get additional join conditions from the relationship's query.
-     *
-     * This method examines the "wheres" property of the relationship’s query builder
-     * and extracts simple "Basic" conditions.
-     *
-     * @return list<array{left: string, operator: string, right: string}> An array of conditions, each as an associative array with keys 'left', 'operator', and 'right'.
-     */
-    public function getConditions(): array
-    {
-        $conditions = [];
-        // Get the underlying Query\Builder from the Eloquent builder.
-        /** @var array<string, array<string, string>> $wheres */
-        $wheres = $this->relation->getQuery()->getQuery()->wheres;
-
-        foreach ($wheres as $where) {
-            if (isset($where['type']) && $where['type'] === 'Basic') {
-                $conditions[] = [
-                    'left'     => $where['column'],
-                    'operator' => $where['operator'],
-                    'right'    => $where['value']
-                ];
-            }
-        }
-
-        return $conditions;
-    }
-
-    /**
-     * Build join condition expressions from additional conditions using the given grammar.
-     *
-     * This method retrieves the additional join conditions (as defined in the relationship's query)
-     * and converts each condition into an array containing Expression objects for 'left' and 'right',
-     * along with the operator.
-     *
-     * @param \Illuminate\Database\Query\Grammars\Grammar $grammar The query grammar instance.
-     * @return list<array{left: string, operator: string, right: string}> An array of conditions, each as an associative array with keys 'left', 'operator', and 'right'.
-     */
-    public function getConditionsExpressions(Grammar $grammar): array
-    {
-        $conditionsExpressions = [];
-        foreach ($this->getConditions() as $condition) {
-            $conditionsExpressions[] = [
-                'left'     => new Expression($grammar->wrap($condition['left'])),
-                'operator' => $condition['operator'],
-                'right'    => new Expression($grammar->wrap($condition['right']))
-            ];
-        }
-        return $conditionsExpressions;
-    }
-
-
-    /**
      * For debugging: Return a string representation of the join clause information.
      *
      * @return string
      */
     public function __toString(): string
     {
-        $conds = empty($this->getConditions()) ? 'none' : json_encode($this->getConditions());
         $qualifiedKeys = $this->getQualifiedKeys();
         return sprintf(
-            "JoinType: %s, ForeignKey: %s, OwnerKey: %s, HasPivotTable: %s, PivotTable: %s, Conditions: %s",
+            "JoinType: %s, ForeignKey: %s, OwnerKey: %s, HasPivotTable: %s, PivotTable: %s",
             $this->joinType,
             $qualifiedKeys['foreign'],
             $qualifiedKeys['owner'],
             $this->hasPivotTable() ? 'true' : 'false',
-            $this->getPivotTable() ?? 'none',
-            $conds
+            $this->getPivotTable() ?? 'none'
         );
     }
 
@@ -424,16 +377,47 @@ class JoinClauseInfo
      * @param string   $chainKey The cumulative join key for the relationship chain.
      * @param Model    $currentModel The current base model instance.
      * @param string   $currentAlias The current alias for the base table.
-     * @param string   $joinType The default join type to use (optional, defaults to 'left').
+     * @param string   $joinType The join type to use.
+     * @param AutoJoinRelation $autoJoinRelation Model-described constraints,
+     *                                               or an empty description for
+     *                                               a normal relationship.
      * @return JoinContext
      *
      * @throws \Exception If the relationship type is unsupported.
      */
-    public static function buildJoinContext(Relation $relation, string $chainKey, Model $currentModel, string $currentAlias, string $joinType = 'left'): JoinContext
-    {
+    public static function buildJoinContext(
+        Relation $relation,
+        string $chainKey,
+        Model $currentModel,
+        string $currentAlias,
+        string $joinType,
+        AutoJoinRelation $autoJoinRelation
+    ): JoinContext {
         // Create a JoinClauseInfo instance from the relation and join type.
         $joinInfo = self::createFromRelation($relation, $joinType);
         // Build and return the JoinContext value object.
-        return new JoinContext($joinInfo, $chainKey, $currentModel, $currentAlias);
+        return new JoinContext(
+            $joinInfo,
+            $chainKey,
+            $currentModel,
+            $currentAlias,
+            $autoJoinRelation
+        );
+    }
+
+    /**
+     * Build the exception used for an unsupported Eloquent relationship.
+     *
+     * @param  Relation  $relation
+     * @return \InvalidArgumentException
+     */
+    private static function unsupportedRelationship(
+        Relation $relation
+    ): \InvalidArgumentException {
+        return new \InvalidArgumentException(sprintf(
+            'Unsupported auto-join relationship type [%s]. Supported types '
+                . 'are BelongsTo, HasOne, HasMany, and BelongsToMany.',
+            $relation::class
+        ));
     }
 }

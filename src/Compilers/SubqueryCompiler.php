@@ -162,12 +162,12 @@ class SubqueryCompiler extends BaseCompiler
      */
     public function compilePathSelectSubquery(string $path): SubQueryExpression
     {
-        $query = $this->buildPathSelectSubquery($path);
+        $subquery = $this->compilePathSelectSubquerySqlExpression($path);
 
         return new SubQueryExpression(sprintf(
             '(%s)',
-            $query->toSql()
-        ));
+            $subquery->sql()
+        ), $subquery->bindings());
     }
 
     /**
@@ -181,7 +181,25 @@ class SubqueryCompiler extends BaseCompiler
      */
     public function compilePathSelectSubquerySql(string $path): string
     {
-        return $this->buildPathSelectSubquery($path)->toSql();
+        return $this->compilePathSelectSubquerySqlExpression($path)
+            ->sql();
+    }
+
+    /**
+     * Compile raw subquery SQL together with its ordered bindings.
+     *
+     * @param  string  $path
+     * @return SubQueryExpression
+     */
+    public function compilePathSelectSubquerySqlExpression(
+        string $path
+    ): SubQueryExpression {
+        $query = $this->buildPathSelectSubquery($path);
+
+        return new SubQueryExpression(
+            $query->toSql(),
+            $query->getBindings()
+        );
     }
 
     /**
@@ -208,6 +226,20 @@ class SubqueryCompiler extends BaseCompiler
      */
     public function compileExistsCountSubquerySql(array $paths): string
     {
+        return $this->compileExistsCountSubquery($paths)
+            ->sql();
+    }
+
+    /**
+     * Compile a binding-aware target-anchored EXISTS count subquery.
+     *
+     * @param  array<int,string>  $paths
+     * @return SubQueryExpression
+     */
+    public function compileExistsCountSubquery(
+        array $paths
+    ): SubQueryExpression
+    {
         if ($paths === []) {
             throw new RuntimeException(
                 'EXISTS count subquery requires at least one path.'
@@ -228,12 +260,23 @@ class SubqueryCompiler extends BaseCompiler
             $paths
         );
 
-        return sprintf(
+        $sql = sprintf(
             '(select count(*) from %s as %s where %s)',
             $grammar->wrapTable($model->getTable()),
             $grammar->wrap($alias),
-            implode("\nor\n", $predicates)
+            implode("\nor\n", array_map(
+                fn (SubQueryExpression $predicate) =>
+                    $predicate->sql(),
+                $predicates
+            ))
         );
+
+        $bindings = array_merge(...array_map(
+            fn (SubQueryExpression $predicate) => $predicate->bindings(),
+            $predicates
+        ));
+
+        return new SubQueryExpression($sql, $bindings);
     }
 
     /**
@@ -257,13 +300,13 @@ class SubqueryCompiler extends BaseCompiler
      * @param  string $path
      * @param  string $targetAlias
      * @param  string $targetField
-     * @return string
+     * @return SubQueryExpression
      */
     protected function compilePathExistsPredicateSql(
         string $path,
         string $targetAlias,
         string $targetField
-    ): string {
+    ): SubQueryExpression {
         $path = trim($path);
 
         if ($path === '') {
@@ -308,9 +351,9 @@ class SubqueryCompiler extends BaseCompiler
             SubqueryQueryCompiler::class
         );
 
-        return sprintf(
-            'exists (%s)',
-            $query->toSql()
+        return new SubQueryExpression(
+            sprintf('exists (%s)', $query->toSql()),
+            $query->getBindings()
         );
     }
 

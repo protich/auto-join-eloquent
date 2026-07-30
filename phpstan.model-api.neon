@@ -1,0 +1,9 @@
+parameters:
+    level: max
+    paths:
+        - src/Model
+        - src/Join/JoinComplexity.php
+        - tests/Unit/Model
+        - tests/Unit/Join/JoinComplexityTest.php
+    bootstrapFiles:
+        - vendor/autoload.php

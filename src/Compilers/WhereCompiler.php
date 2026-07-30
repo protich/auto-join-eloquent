@@ -14,6 +14,10 @@ use Exception;
  */
 class WhereCompiler extends BaseCompiler
 {
+    /**
+     * {@inheritDoc}
+     */
+    protected const BINDING_TYPE = 'where';
 
     /**
      * Compile a WHERE clause column expression.
@@ -48,16 +52,23 @@ class WhereCompiler extends BaseCompiler
     // @phpstan-ignore-next-line
     public function compileClause(array $wheres): array
     {
-        return collect($wheres)->map(function (mixed $where) {
+        $compiled = [];
+
+        foreach ($wheres as $key => $where) {
+            $this->beginClause();
+
             if (is_array($where)) {
                 if (isset($where['type'])
                     && $where['type'] === 'Nested'
                     && $where['query'] instanceof Builder) {
                     // Recursively compile the nested where builder
                     $nestedCompiler = new self($this->builder);
+                    $nestedCompiler->bindingOffset = $this->bindingOffset;
                     $compiledNested = $nestedCompiler->compileClause($where['query']->wheres);
                     $where['query']->wheres = $compiledNested;
-                    return $where;
+                    $this->bindingOffset = $nestedCompiler->bindingOffset;
+                    $compiled[$key] = $where;
+                    continue;
                 }
 
                 // Standard column or raw SQL expression
@@ -71,7 +82,10 @@ class WhereCompiler extends BaseCompiler
                 }
             }
 
-            return $where;
-        })->all();
+            $compiled[$key] = $where;
+            $this->finishClause($where);
+        }
+
+        return $compiled;
     }
 }

@@ -7,6 +7,10 @@ use protich\AutoJoinEloquent\Compilers\{QueryCompiler,
 use protich\AutoJoinEloquent\Join\JoinContext;
 use protich\AutoJoinEloquent\Join\JoinClauseInfo;
 use protich\AutoJoinEloquent\Join\JoinAliasManager;
+use protich\AutoJoinEloquent\Join\JoinComplexity;
+use protich\AutoJoinEloquent\Model\AutoJoinRelation;
+use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
+use protich\AutoJoinEloquent\Model\PathRequest;
 
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model;
@@ -42,6 +46,17 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * @var array<string>
      */
     protected array $autoJoinedRelations = [];
+
+    /**
+     * Relationship descriptions resolved for the current join chains.
+     *
+     * A description carries both the Eloquent relationship and any
+     * model-authored constraints. Caching it ensures each chain is described
+     * only once even when several query clauses reference the same join.
+     *
+     * @var array<string,AutoJoinRelation>
+     */
+    protected array $resolvedRelationships = [];
 
 
     /**
@@ -573,22 +588,23 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     }
 
     /**
-     * Parse a model-defined column path into its logical path and segments.
+     * Resolve the model-defined path descriptor for the given column.
      *
-     * Example:
-     *
-     * - model__status
-     *   => ['path' => 'status', 'segments' => []]
-     *
-     * - model__accessibleDepartments__id__count
-     *   => ['path' => 'accessibleDepartments', 'segments' => ['id', 'count']]
+     * The complete path is delegated to the model without package-level
+     * segmentation or interpretation.
      *
      * @param  string $column
-     * @return array{path:string,segments:array<int,string>}
+     * @return array{
+     *     path:string,
+     *     descriptor:ExpressionDescriptor
+     * }
      *
-     * @throws \InvalidArgumentException
+     * @throws \InvalidArgumentException If the column is not a valid
+     *                                   model-defined path.
+     * @throws \RuntimeException If the model hook is missing or returns an
+     *                           unsupported value.
      */
-    public function parseModelDefinedPath(string $column): array
+    public function describeModelDefinedPath(string $column): array
     {
         if (! $this->isModelDefinedPath($column)) {
             throw new \InvalidArgumentException(sprintf(
@@ -597,52 +613,31 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             ));
         }
 
-        $parts = explode('__', $column);
+        $model = $this->getBaseModel();
 
-        array_shift($parts); // remove "model"
+        if (! method_exists($model, 'describeAutoJoinPath')) {
+            throw new \RuntimeException(sprintf(
+                'Model [%s] must define describeAutoJoinPath() to resolve [%s].',
+                $model::class,
+                $column
+            ));
+        }
 
-        $path = array_shift($parts);
+        $descriptor = $model->describeAutoJoinPath(
+            new PathRequest($column)
+        );
 
-        if (! is_string($path) || $path === '') {
-            throw new \InvalidArgumentException(sprintf(
-                'Column [%s] does not define a model path name.',
+        if (! $descriptor instanceof ExpressionDescriptor) {
+            throw new \RuntimeException(sprintf(
+                'Model [%s] must return an ExpressionDescriptor for auto-join path [%s].',
+                $model::class,
                 $column
             ));
         }
 
         return [
-            'path' => $path,
-            'segments' => array_values(array_filter(
-                $parts,
-                fn ($part) => $part !== ''
-            )),
-        ];
-    }
-
-    /**
-     * Resolve the model-defined path descriptor for the given column.
-     *
-     * This method parses the logical path and delegates descriptor resolution
-     * to the base model via describeAutoJoinPath().
-     *
-     * @param  string $column
-     * @return array{
-     *     path:string,
-     *     segments:array<int,string>,
-     *     descriptor:array<string,mixed>
-     * }
-     */
-    public function describeModelDefinedPath(string $column): array
-    {
-        $parsed = $this->parseModelDefinedPath($column);
-
-        return [
-            'path' => $parsed['path'],
-            'segments' => $parsed['segments'],
-            'descriptor' => $this->getBaseModel()::describeAutoJoinPath(
-                $parsed['path'],
-                $parsed['segments']
-            ),
+            'path' => $column,
+            'descriptor' => $descriptor,
         ];
     }
 
@@ -699,9 +694,10 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     /**
      * Resolve a column expression that requires auto-joining.
      *
-     * Given a parsed relationship chain (from parseColumnChain()), this method iterates over each segment,
-     * validates that the relationship exists using getValidRelation(), and then creates a JoinContext
-     * (via JoinClauseInfo::buildJoinContext()) to delegate join processing.
+     * Given a parsed relationship chain (from parseColumnChain()), this method
+     * asks each model to resolve and describe its relationship, then creates a
+     * JoinContext (via JoinClauseInfo::buildJoinContext()) to delegate join
+     * processing.
      * If the join has not yet been applied, it processes the join (pivot or normal) via processAutoJoin().
      * Finally, it builds the fully qualified column expression using the alias from the final join.
      *
@@ -717,6 +713,11 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         $currentModel = $this->getBaseModel();
         $currentAlias = $this->getBaseAlias();
         $chainKeyParts = [];
+        $path = sprintf(
+            '%s.%s',
+            implode('__', array_column($chain, 'relation')),
+            $fieldName
+        );
         // Iterate through each segment in the chain.
         foreach ($chain as $item) {
             $relationName = $item['relation'];
@@ -724,14 +725,28 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             $chainKeyParts[] = $relationName;
             $chainKey = implode('__', $chainKeyParts);
 
-            // Validate that the current model's relation method exists and returns a valid relationship.
-            $relation = $this->getValidRelation($currentModel, $relationName);
+            if (isset($this->resolvedRelationships[$chainKey])) {
+                $autoJoinRelation = $this->resolvedRelationships[$chainKey];
+            } else {
+                $autoJoinRelation = $this->resolveRelationship(
+                    $currentModel,
+                    $relationName,
+                    $path
+                );
+                $this->resolvedRelationships[$chainKey] = $autoJoinRelation;
+            }
+
+            $relation = $autoJoinRelation->relation();
 
             // If this join has not yet been applied, process it.
             if (!in_array($chainKey, $this->autoJoinedRelations)) {
                 // Build a join context object from the relation using JoinClauseInfo.
                 $joinContext = JoinClauseInfo::buildJoinContext($relation,
-                    $chainKey, $currentModel, $currentAlias, $joinType);
+                    $chainKey,
+                    $currentModel,
+                    $currentAlias,
+                    $joinType,
+                    $autoJoinRelation);
                 // Set the relation name - useful for creating aliases
                 $joinContext->setRelationName($relationName);
                 // Process the join, which will delegate pivot joins if needed.
@@ -769,6 +784,15 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             return $this->processPivotJoin($context);
         }
 
+        foreach ($context->getAutoJoinRelation()->constraints() as $constraint) {
+            if ($constraint['target'] === 'pivot') {
+                throw new \RuntimeException(sprintf(
+                    'Relation [%s] cannot use a pivot constraint because it is not a belongsToMany relationship.',
+                    $context->getRelationName()
+                ));
+            }
+        }
+
         // Process a normal join.
         $joinInfo  = $context->getJoinInfo();
         $grammar   = $this->getQuery()->getGrammar();
@@ -784,13 +808,23 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         // Build join conditions (primary join condition plus any additional conditions).
         $joinConditions = [
             [
+                'type'     => 'column',
                 'left'     => $keyExpressions['foreign'],
                 'operator' => '=',
                 'right'    => $keyExpressions['owner']
             ]
         ];
-        // Merge additional conditions from the relationship.
-        $joinConditions = array_merge($joinConditions, $joinInfo->getConditionsExpressions($grammar));
+        $joinConditions = array_merge(
+            $joinConditions,
+            $this->buildAutoJoinConditions(
+                $context->getAutoJoinRelation(),
+                [
+                    'parent' => $context->getModelAlias(),
+                    'related' => $joinAlias,
+                ],
+                ['parent', 'related']
+            )
+        );
 
         // Build the table expression for the related table.
         $relatedTable   = $joinInfo->getRelatedTable();
@@ -848,14 +882,23 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         // Primary join condition: base key = pivot foreign key.
         $pivotConditions = [
             [
+                'type'     => 'column',
                 'left'     => $pivotKeyExpressions['base'],
                 'operator' => '=',
                 'right'    => $pivotKeyExpressions['pivot']
             ]
         ];
-        // Merge additional pivot conditions, if any.
-        $pivotConditions = array_merge($pivotConditions,
-            $joinInfo->getConditionsExpressions($grammar));
+        $pivotConditions = array_merge(
+            $pivotConditions,
+            $this->buildAutoJoinConditions(
+                $context->getAutoJoinRelation(),
+                [
+                    'parent' => $modelAlias,
+                    'pivot' => $pivotAlias,
+                ],
+                ['parent', 'pivot']
+            )
+        );
 
         $pivotTableExpr = new Expression(sprintf('%s as %s',
             $grammar->wrapTable($pivotTable),
@@ -885,14 +928,20 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         // Primary join condition: pivot key (for related model) = related model's primary key.
         $relatedConditions = [
             [
+                'type'     => 'column',
                 'left'     => $pivotRelatedKeyExpressions['pivot'],
                 'operator' => '=',
                 'right'    => $pivotRelatedKeyExpressions['related']
             ]
         ];
-        // Merge additional related conditions, if any.
-        $relatedConditions = array_merge($relatedConditions,
-            $joinInfo->getConditionsExpressions($grammar));
+        $relatedConditions = array_merge(
+            $relatedConditions,
+            $this->buildAutoJoinConditions(
+                $context->getAutoJoinRelation(),
+                ['related' => $relatedAlias],
+                ['related']
+            )
+        );
 
         $relatedTableExpr = new Expression(sprintf('%s as %s',
             $grammar->wrapTable($relatedTable),
@@ -926,8 +975,25 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      *
      * @param string     $joinMethod      The join method to use (e.g., 'leftJoin', 'join').
      * @param Expression $tableExpression The table expression (with alias) to join.
-     * @param array<mixed>    $conditions      An array of conditions, each as an associative array
-     *                                    with keys 'left', 'operator', and 'right'.
+     * @param list<
+     *     array{
+     *         type:'column',
+     *         left:\Illuminate\Contracts\Database\Query\Expression|string,
+     *         operator:string,
+     *         right:\Illuminate\Contracts\Database\Query\Expression|string
+     *     }
+     *     |array{
+     *         type:'basic',
+     *         left:\Illuminate\Contracts\Database\Query\Expression,
+     *         operator:string,
+     *         value:mixed
+     *     }
+     *     |array{
+     *         type:'null',
+     *         left:\Illuminate\Contracts\Database\Query\Expression,
+     *         not:bool
+     *     }
+     * > $conditions
      * @param array<string, mixed>      $context         Optional context information for tracking purposes.
      * @return void
      */
@@ -938,9 +1004,24 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         /** @param \Illuminate\Database\Query\JoinClause $join */
         $query->$joinMethod($tableExpression, function (JoinClause $join) use ($conditions, $joinMethod, $context) {
             // Apply each condition to the join.
-            /** @var array<int, array{left: string, operator: string, right: string}> $conditions */
             foreach ($conditions as $condition) {
-                $join->on($condition['left'], $condition['operator'], $condition['right']);
+                match ($condition['type']) {
+                    'column' => $join->on(
+                        $condition['left'],
+                        $condition['operator'],
+                        $condition['right']
+                    ),
+                    'basic' => $join->where(
+                        $condition['left'],
+                        $condition['operator'],
+                        $condition['value']
+                    ),
+                    'null' => $join->whereNull(
+                        $condition['left'],
+                        'and',
+                        $condition['not']
+                    ),
+                };
             }
             // Track this join operation.
             $this->onJoin($join, array_merge($context, [
@@ -1002,33 +1083,148 @@ class AutoJoinQueryBuilder extends EloquentBuilder
 
         return new Expression($expression);
     }
+    /**
+     * Ask the model to resolve and describe a relationship.
+     *
+     * Every relationship returns a description carrying the original Eloquent
+     * relation. JoinComplexity determines whether an empty description is
+     * acceptable; complex relationships must describe at least one normalized
+     * constraint.
+     *
+     * @param  Model     $model        Model that owns the relationship.
+     * @param  string    $relationName Relationship method name.
+     * @param  string    $path         Complete normalized query path.
+     * @return AutoJoinRelation
+     *
+     * @throws \RuntimeException If the model returns an invalid description or
+     *                           leaves a complex relationship undescribed.
+     */
+    protected function resolveRelationship(
+        Model $model,
+        string $relationName,
+        string $path
+    ): AutoJoinRelation {
+        $description = $this->callModelHook(
+            $model,
+            'describeAutoJoinRelation',
+            [$relationName, $path]
+        );
 
+        if (! $description instanceof AutoJoinRelation) {
+            throw new \RuntimeException(sprintf(
+                'Model [%s] returned an invalid description for complex auto-join relation [%s] on path [%s].',
+                $model::class,
+                $relationName,
+                $path
+            ));
+        }
 
+        if (
+            JoinComplexity::isComplex($description->relation())
+            && ! $description->hasConstraints()
+        ) {
+            throw new \RuntimeException(sprintf(
+                'Model [%s] did not describe constraints for complex auto-join relation [%s] on path [%s].',
+                $model::class,
+                $relationName,
+                $path
+            ));
+        }
+
+        return $description;
+    }
 
     /**
-     * Verify that the given model has a valid relationship method and return the relation instance.
+     * Invoke a hook supplied by an auto-join model.
      *
-     * @param \Illuminate\Database\Eloquent\Model $model The model instance.
-     * @param string $relationName The name of the relationship method.
-     * @return \Illuminate\Database\Eloquent\Relations\Relation
-     * @throws \Exception if the method does not exist or does not return a valid relationship.
+     * Models using the auto-join traits are expected to provide the requested
+     * hook. The caller validates the hook's returned value.
+     *
+     * @param  Model        $model
+     * @param  string       $method
+     * @param  array<mixed> $arguments
+     * @return mixed
      */
-    protected function getValidRelation($model, string $relationName): Relation
-    {
-        // Ensure the current model has the method.
-        if (!method_exists($model, $relationName)) {
-            throw new \Exception("Method {$relationName} does not exist on " . get_class($model));
+    protected function callModelHook(
+        Model $model,
+        string $method,
+        array $arguments
+    ): mixed {
+        return $model->{$method}(...$arguments);
+    }
+
+    /**
+     * Compile model-described relationship constraints for a join stage.
+     *
+     * Only constraints matching the requested stage targets are emitted. Each
+     * column is qualified with the package-generated alias while scalar values
+     * remain values so Laravel adds them as join bindings.
+     *
+     * @param  AutoJoinRelation       $relation Model-described constraints.
+     * @param  array<string, string>  $aliases  Alias keyed by table target.
+     * @param  list<string>           $targets  Targets compiled in this stage.
+     * @return list<
+     *     array{
+     *         type:'basic',
+     *         left:\Illuminate\Contracts\Database\Query\Expression,
+     *         operator:string,
+     *         value:mixed
+     *     }
+     *     |array{
+     *         type:'null',
+     *         left:\Illuminate\Contracts\Database\Query\Expression,
+     *         not:bool
+     *     }
+     * >
+     *
+     * @throws \RuntimeException If a requested constraint target has no alias.
+     */
+    protected function buildAutoJoinConditions(
+        AutoJoinRelation $relation,
+        array $aliases,
+        array $targets
+    ): array {
+        $grammar = $this->getGrammar();
+        $conditions = [];
+
+        foreach ($relation->constraints() as $constraint) {
+            if (! in_array($constraint['target'], $targets, true)) {
+                continue;
+            }
+
+            $alias = $aliases[$constraint['target']] ?? null;
+
+            if ($alias === null) {
+                throw new \RuntimeException(sprintf(
+                    'No join alias is available for auto-join constraint target [%s].',
+                    $constraint['target']
+                ));
+            }
+
+            $left = new Expression(sprintf(
+                '%s.%s',
+                $grammar->wrap($alias),
+                $grammar->wrap($constraint['column'])
+            ));
+
+            if ($constraint['type'] === 'null') {
+                $conditions[] = [
+                    'type' => 'null',
+                    'left' => $left,
+                    'not' => $constraint['not'],
+                ];
+                continue;
+            }
+
+            $conditions[] = [
+                'type' => 'basic',
+                'left' => $left,
+                'operator' => $constraint['operator'],
+                'value' => $constraint['value'],
+            ];
         }
 
-        // Retrieve the relation instance.
-        $relation = $model->$relationName();
-
-        // Ensure that the returned value is a valid Eloquent relationship.
-        if (!$relation instanceof Relation) {
-            throw new \Exception("Method {$relationName} on " . get_class($model) . " is not a relationship.");
-        }
-
-        return $relation;
+        return $conditions;
     }
 
 
@@ -1068,6 +1264,20 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         Query $query,
         ?string $queryCompilerClass = null
     ): void {
+        // Eloquent applies global scopes to a cloned query builder. Compile
+        // against the active clone passed to the callback so joins and
+        // rewritten expressions are not left on the pre-scope query.
+        if ($this->getQuery() !== $query) {
+            $this->autoJoinedRelations = [];
+            $this->resolvedRelationships = [];
+            $this->aliasManager = new JoinAliasManager($this->useSimpleAliases);
+            $this->selectAliases = [];
+            $this->subqueryCounter = 0;
+            $this->debugLog = [];
+        }
+
+        $this->setQuery($query);
+
         $grammar = $this->getGrammar();
         $from = $query->from;
 

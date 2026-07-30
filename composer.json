@@ -2,7 +2,7 @@
   "name": "protich/auto-join-eloquent",
   "description": "Extend Eloquent to support auto-joining relationships and aliasing for SELECT, WHERE, ORDERBY, GROUPBY and HAVING clauses",
   "type": "library",
-  "version": "0.9.9",
+  "version": "0.10.0",
   "license": "MIT",
   "authors": [
     {
@@ -13,8 +13,8 @@
     }
   ],
   "require": {
-    "php": ">=8.2",
-    "illuminate/database": "*"
+    "php": "^8.3",
+    "illuminate/database": "^13.0"
   },
   "autoload": {
     "psr-4": {
@@ -41,13 +41,14 @@
     }
   },
   "require-dev": {
-    "phpunit/phpunit": "^9.0",
-    "orchestra/testbench": "^6.0",
+    "phpunit/phpunit": "^11.5.50",
+    "orchestra/testbench": "^11.1",
     "phpstan/phpstan": "^2.1"
   },
   "scripts": {
     "test": "./vendor/bin/phpunit",
-    "phpstan": "phpstan analyse"
+    "phpstan": "phpstan analyse",
+    "phpstan:model-api": "phpstan analyse --configuration=phpstan.model-api.neon --no-progress"
   },
   "config": {
     "allow-plugins": {
