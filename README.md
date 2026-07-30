@@ -38,7 +38,7 @@ composer require protich/auto-join-eloquent
 - PHP 8.3
 - Illuminate Database 13
 
-Version 0.10 supports `BelongsTo`, `HasOne`, `HasMany`, and
+Version 0.11 supports `BelongsTo`, `HasOne`, `HasMany`, and
 `BelongsToMany` relationships. Other Eloquent relationship types, including
 `HasOneThrough` and `HasManyThrough`, fail with an explicit unsupported-type
 exception before join compilation.
@@ -130,9 +130,11 @@ This query compiles the raw SQL and correctly applies the aggregate condition.
 
 ### Model-Defined Paths
 
-Expressions beginning with `model__` are delegated to the base model as one
-complete path. The package does not split or interpret the path before calling
-the model.
+Normal fields and Eloquent relationships are resolved first. When the package
+reaches a path segment it cannot resolve, it asks the model at that hop to
+describe the complete unresolved remainder. A model returns `null` when it
+does not own that expression, preserving the package's permissive handling of
+unknown columns and literal expressions.
 
 ```php
 use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
@@ -140,27 +142,29 @@ use protich\AutoJoinEloquent\Model\PathRequest;
 
 public static function describeAutoJoinPath(
     PathRequest $request
-): ExpressionDescriptor {
+): ?ExpressionDescriptor {
     return match ($request->path) {
-        'model__status' => ExpressionDescriptor::path('flags'),
+        'status' => ExpressionDescriptor::path('flags'),
 
-        'model__accessibleDepartments__id__count' =>
+        'accessibleDepartments__id__count' =>
             ExpressionDescriptor::count([
                 'departments.id',
                 'groups.departments.id',
             ], distinct: true),
 
-        default => throw new \RuntimeException(sprintf(
-            'Unsupported auto-join path [%s].',
-            $request->path
-        )),
+        default => null,
     };
 }
 ```
 
 The returned `ExpressionDescriptor` tells the package how to compile the
-logical expression. Models only need this hook for paths carrying the
-`model__` marker.
+logical expression. For example,
+`organization__cdata__field_id__42` traverses `organization` and `cdata`
+normally, then offers only `field_id__42` to the CData model.
+
+The optional `model__` marker remains supported as an explicit compatibility
+escape hatch. It asks the base model first and, when declined, follows the same
+hop-local fallback behavior.
 
 ### Complex Relationships
 
@@ -210,8 +214,9 @@ provide a partial description.
 
 ## Upgrading
 
-Version 0.10 introduces breaking model API and runtime changes. Applications
-upgrading from 0.9 should follow [UPGRADING.md](UPGRADING.md).
+Version 0.11 adds implicit, hop-local model expression resolution and makes
+the model hook nullable. Applications upgrading from earlier versions should
+follow [UPGRADING.md](UPGRADING.md).
 
 ## Configuration
 
