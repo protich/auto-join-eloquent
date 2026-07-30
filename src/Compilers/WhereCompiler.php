@@ -3,7 +3,7 @@
 namespace protich\AutoJoinEloquent\Compilers;
 
 use Illuminate\Database\Query\Builder;
-use Illuminate\Database\Query\Expression;
+use protich\AutoJoinEloquent\Support\CompiledExpression;
 use Exception;
 
 /**
@@ -28,10 +28,13 @@ class WhereCompiler extends BaseCompiler
      *
      * @param string $column The raw column expression.
      * @param bool $allowAlias Required by interface; always ignored (false).
-     * @return Expression The compiled expression.
+     * @return CompiledExpression The compiled expression.
      * @throws Exception If an aggregate expression is detected in WHERE clause.
      */
-    public function compileColumn(string $column, bool $allowAlias = false): Expression
+    public function compileColumn(
+        string $column,
+        bool $allowAlias = false
+    ): CompiledExpression
     {
         if ($modelPath = $this->parseDescribedPathExpression($column)) {
             return $this->compileModelDefinedPath($modelPath, false);
@@ -50,10 +53,9 @@ class WhereCompiler extends BaseCompiler
      *
      * Recursively compiles nested where groups (type = "Nested") using a fresh WhereCompiler instance.
      *
-     * @param array $wheres
-     * @return array
+     * @param array<int|string,mixed> $wheres
+     * @return array<int|string,mixed>
      */
-    // @phpstan-ignore-next-line
     public function compileClause(array $wheres): array
     {
         $compiled = [];
@@ -80,8 +82,11 @@ class WhereCompiler extends BaseCompiler
                     $where['column'] = $this->compileColumn( $where['column']);
                 }
 
-                if (isset($where['sql']) && is_string($where['sql'])
-                    && strcasecmp( $where['type'] ?? '', 'Raw') === 0) { // @phpstan-ignore-line
+                if (
+                    is_string($where['sql'] ?? null)
+                    && is_string($where['type'] ?? null)
+                    && strcasecmp($where['type'], 'Raw') === 0
+                ) {
                     $where['sql'] = $this->compileRawSql( $where['sql']);
                 }
             }

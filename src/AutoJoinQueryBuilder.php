@@ -11,7 +11,9 @@ use protich\AutoJoinEloquent\Join\JoinComplexity;
 use protich\AutoJoinEloquent\Model\AutoJoinRelation;
 use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
 use protich\AutoJoinEloquent\Model\PathRequest;
+use protich\AutoJoinEloquent\Support\CompiledExpression;
 
+use Illuminate\Contracts\Database\Query\Expression as ExpressionContract;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder as Query;
@@ -20,6 +22,9 @@ use Illuminate\Database\Query\Expression;
 use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * @extends EloquentBuilder<Model>
+ */
 class AutoJoinQueryBuilder extends EloquentBuilder
 {
     /**
@@ -817,7 +822,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      *
      * @param  Model  $model
      * @param  string $name
-     * @return Relation|null
+     * @return Relation<Model,Model,mixed>|null
      */
     protected function probeRelationship(
         Model $model,
@@ -927,37 +932,48 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * @param string|null $alias Optional override for alias parsed from the expression.
      * @param bool $allowAutoAliasing Whether to allow auto-aliasing when the field is inferred.
      * @param string|null $relationshipPath Complete path supplied to relationship hooks.
-     * @return \Illuminate\Database\Query\Expression The resolved SQL expression.
+     * @return CompiledExpression The resolved SQL expression.
      */
     public function resolveColumnExpression(
         string $column,
         ?string $alias = null,
         bool $allowAutoAliasing = true,
         ?string $relationshipPath = null
-    ): Expression {
+    ): CompiledExpression {
         // Parse the column into components: chain, field, and default alias (with auto-aliasing logic)
         $parsed = $this->parseColumnChain($column, $this->getBaseModel()->getTable(), $allowAutoAliasing);
+        $fieldName = $parsed['field'];
+
+        if ($fieldName === null) {
+            throw new \InvalidArgumentException(sprintf(
+                'Column expression [%s] does not contain a field.',
+                $column
+            ));
+        }
 
         // If a relationship chain is present, delegate to auto-join logic
         if (!empty($parsed['chain'])) {
             return $this->resolveAutoJoinExpression(
                 $parsed['chain'],
-                $parsed['field'], // @phpstan-ignore-line
+                $fieldName,
                 $alias ?? $parsed['alias'],
                 $relationshipPath
             );
         }
 
         // No relationship chain: resolve directly on base model
-        $fieldName = $parsed['field'];
         $fieldAlias = $alias ?? $parsed['alias'];
 
         // Add table alias if it's a field on the base model
-        $tableAlias = $this->isBaseModelColumn($fieldName) // @phpstan-ignore-line
+        $tableAlias = $this->isBaseModelColumn($fieldName)
             ? $this->getBaseAlias()
             : null;
 
-        return $this->buildColumnExpression($fieldName, $fieldAlias, $tableAlias); // @phpstan-ignore-line
+        return $this->buildColumnExpression(
+            $fieldName,
+            $fieldAlias,
+            $tableAlias
+        );
     }
 
     /**
@@ -974,7 +990,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * @param string $fieldName The final field name to select.
      * @param string|null $fieldAlias An optional alias to use instead of any parsed alias.
      * @param string|null $relationshipPath Complete path supplied to relationship hooks.
-     * @return \Illuminate\Database\Query\Expression The resolved column expression.
+     * @return CompiledExpression The resolved column expression.
      * @throws \Exception If a relation method is missing or invalid.
      */
     public function resolveAutoJoinExpression(
@@ -982,7 +998,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         string $fieldName,
         ?string $fieldAlias = null,
         ?string $relationshipPath = null
-    ): Expression {
+    ): CompiledExpression {
         // Initialize with the base model and its alias.
         $currentModel = $this->getBaseModel();
         $currentAlias = $this->getBaseAlias();
@@ -1155,7 +1171,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
 
         // Build the table expression for the related table.
         $relatedTable   = $joinInfo->getRelatedTable();
-        $tableExpression = new Expression(sprintf('%s as %s',
+        $tableExpression = new CompiledExpression(sprintf('%s as %s',
             $grammar->wrapTable($relatedTable),
             $grammar->wrap($joinAlias)));
         $joinMethod = $joinInfo->getJoinMethod(); // e.g., 'leftJoin'
@@ -1166,7 +1182,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             $tableExpression,
             $joinConditions,
             [
-                'table'    => $tableExpression->getValue($grammar), // @phpstan-ignore-line
+                'table'    => $tableExpression->getValue($grammar),
                 'chainKey' => $context->getChainKey(), // Tagged chain key can be modified as needed.
                 'alias'    => $joinAlias,
             ]
@@ -1227,7 +1243,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             )
         );
 
-        $pivotTableExpr = new Expression(sprintf('%s as %s',
+        $pivotTableExpr = new CompiledExpression(sprintf('%s as %s',
             $grammar->wrapTable($pivotTable),
             $grammar->wrap($pivotAlias)));
         $joinMethod     = $joinInfo->getJoinMethod(); // e.g., 'leftJoin'
@@ -1237,7 +1253,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             $pivotConditions,
             [
                 'chainKey' => $pivotChainKey,
-                'table'    => $pivotTableExpr->getValue($grammar), // @phpstan-ignore-line
+                'table'    => $pivotTableExpr->getValue($grammar),
                 'alias'    => $pivotAlias
             ]
         );
@@ -1270,7 +1286,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             )
         );
 
-        $relatedTableExpr = new Expression(sprintf('%s as %s',
+        $relatedTableExpr = new CompiledExpression(sprintf('%s as %s',
             $grammar->wrapTable($relatedTable),
             $grammar->wrap($relatedAlias)));
         $this->addJoin(
@@ -1279,7 +1295,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             $relatedConditions,
             [
                 'chainKey' => $relatedChainKey,
-                'table'    => $relatedTableExpr->getValue($grammar), // @phpstan-ignore-line
+                'table'    => $relatedTableExpr->getValue($grammar),
                 'alias'    => $relatedAlias
             ]
         );
@@ -1301,7 +1317,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * (e.g. "$chainKey . '_pivot'") and an 'alias' key.
      *
      * @param string     $joinMethod      The join method to use (e.g., 'leftJoin', 'join').
-     * @param Expression $tableExpression The table expression (with alias) to join.
+     * @param ExpressionContract $tableExpression The table expression (with alias) to join.
      * @param list<
      *     array{
      *         type:'column',
@@ -1324,7 +1340,12 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * @param array<string, mixed>      $context         Optional context information for tracking purposes.
      * @return void
      */
-    protected function addJoin(string $joinMethod, $tableExpression, array $conditions, array $context = []): void
+    protected function addJoin(
+        string $joinMethod,
+        ExpressionContract $tableExpression,
+        array $conditions,
+        array $context = []
+    ): void
     {
         // Retrieve the current query builder instance.
         $query = $this->getQuery();
@@ -1387,9 +1408,13 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * @param string $columnName The name of the column/field.
      * @param string|null $columnAlias Optional alias for the column.
      * @param string|null $tableAlias Optional table alias; if provided, the column is prefixed with this alias.
-     * @return \Illuminate\Database\Query\Expression The constructed SQL expression.
+     * @return CompiledExpression The constructed SQL expression.
      */
-    protected function buildColumnExpression(string $columnName, ?string $columnAlias = null, ?string $tableAlias = null)
+    protected function buildColumnExpression(
+        string $columnName,
+        ?string $columnAlias = null,
+        ?string $tableAlias = null
+    ): CompiledExpression
     {
         $grammar = $this->getGrammar();
 
@@ -1408,7 +1433,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             $expression = sprintf('%s as %s', $expression, $grammar->wrap($columnAlias));
         }
 
-        return new Expression($expression);
+        return new CompiledExpression($expression);
     }
     /**
      * Ask the model to resolve and describe a relationship.
@@ -1528,7 +1553,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
                 ));
             }
 
-            $left = new Expression(sprintf(
+            $left = new CompiledExpression(sprintf(
                 '%s.%s',
                 $grammar->wrap($alias),
                 $grammar->wrap($constraint['column'])
@@ -1609,7 +1634,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * further query compilation to the provided query compiler class.
      *
      * @param  Query                          $query
-     * @param  class-string<QueryCompiler>|null $queryCompilerClass
+     * @param  class-string|null $queryCompilerClass
      * @return void
      */
     public function autoJoinQuery(
@@ -1635,21 +1660,28 @@ class AutoJoinQueryBuilder extends EloquentBuilder
         $grammar = $this->getGrammar();
         $from = $query->from;
 
-        if ($from instanceof Expression) {
-            $from = $from->getValue($grammar); // @phpstan-ignore-line
+        if ($from instanceof ExpressionContract) {
+            $from = $from->getValue($grammar);
         }
 
-        $alias = $this->parseAlias((string) $from);
+        if (! is_string($from)) {
+            throw new \RuntimeException(sprintf(
+                'Auto-join FROM expressions must resolve to SQL strings; [%s] given.',
+                get_debug_type($from)
+            ));
+        }
+
+        $alias = $this->parseAlias($from);
 
         if ($alias !== null) {
             $this->setBaseAlias($alias);
         }
 
-        $query->from = new Expression(sprintf(
+        $query->from(new CompiledExpression(sprintf(
             '%s as %s',
             $grammar->wrapTable($this->getBaseTable()),
             $grammar->wrap($this->getBaseAlias())
-        ));
+        )));
 
         $queryCompilerClass ??= QueryCompiler::class;
 
@@ -1660,7 +1692,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             ));
         }
 
-        if (!is_a($queryCompilerClass, QueryCompiler::class, true)) {
+        if (! is_a($queryCompilerClass, QueryCompiler::class, true)) {
             throw new \RuntimeException(sprintf(
                 'Query compiler class [%s] must extend %s.',
                 $queryCompilerClass,

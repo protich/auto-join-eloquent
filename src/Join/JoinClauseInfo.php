@@ -8,17 +8,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Query\Expression;
+use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Query\Grammars\Grammar;
 
 use protich\AutoJoinEloquent\Model\AutoJoinRelation;
+use protich\AutoJoinEloquent\Support\CompiledExpression;
 
 class JoinClauseInfo
 {
     /**
      * The Eloquent relationship instance.
      *
-     * @var \Illuminate\Database\Eloquent\Relations\Relation
+     * @var Relation<covariant Model,covariant Model,covariant mixed>
      */
     protected Relation $relation;
 
@@ -32,7 +33,7 @@ class JoinClauseInfo
     /**
      * Create a new JoinClauseInfo instance.
      *
-     * @param  \Illuminate\Database\Eloquent\Relations\Relation  $relation
+     * @param Relation<covariant Model,covariant Model,covariant mixed> $relation
      * @param  string  $joinType  The join type to use (defaults to 'left').
      *
      * @throws \InvalidArgumentException If the relationship type is unsupported.
@@ -210,7 +211,10 @@ class JoinClauseInfo
      * @param \Illuminate\Database\Query\Grammars\Grammar $grammar   The query grammar instance.
      * @param string                                      $baseAlias The alias for the base model's table.
      * @param string                                      $joinAlias The alias for the joined (related) table.
-     * @return array{foreign: Expression, owner: Expression}
+     * @return array{
+     *     foreign: Expression,
+     *     owner: Expression
+     * }
      *
      * @throws \Exception If the relationship is an instance of BelongsToMany or if key formats are invalid.
      */
@@ -233,18 +237,18 @@ class JoinClauseInfo
         $ownerColumn   = end($ownerParts);
         if ($this->relation instanceof BelongsTo) {
             // For belongsTo, the base model holds the foreign key.
-            $foreignExpr = new Expression(
+            $foreignExpr = new CompiledExpression(
                 sprintf('%s.%s', $grammar->wrap($baseAlias), $grammar->wrap($foreignColumn))
             );
-            $ownerExpr = new Expression(
+            $ownerExpr = new CompiledExpression(
                 sprintf('%s.%s', $grammar->wrap($joinAlias), $grammar->wrap($ownerColumn))
             );
         } else {
             // For hasOne/hasMany, the joined (related) model holds the foreign key.
-            $foreignExpr = new Expression(
+            $foreignExpr = new CompiledExpression(
                 sprintf('%s.%s', $grammar->wrap($joinAlias), $grammar->wrap($foreignColumn))
             );
-            $ownerExpr = new Expression(
+            $ownerExpr = new CompiledExpression(
                 sprintf('%s.%s', $grammar->wrap($baseAlias), $grammar->wrap($ownerColumn))
             );
         }
@@ -264,7 +268,10 @@ class JoinClauseInfo
      * @param Grammar $grammar   The query grammar instance.
      * @param string  $baseAlias The alias for the base model's table.
      * @param string  $pivotAlias The alias for the pivot table.
-     * @return array{base: Expression, pivot: Expression}
+     * @return array{
+     *     base: Expression,
+     *     pivot: Expression
+     * }
      *
      * @throws \Exception If the foreign pivot key format is invalid.
      */
@@ -281,10 +288,10 @@ class JoinClauseInfo
         }
         $field = end($parts);
 
-        $baseExpr = new Expression(
+        $baseExpr = new CompiledExpression(
             sprintf('%s.%s', $grammar->wrap($baseAlias), $grammar->wrap($baseKey))
         );
-        $pivotExpr = new Expression(
+        $pivotExpr = new CompiledExpression(
             sprintf('%s.%s', $grammar->wrap($pivotAlias), $grammar->wrap($field))
         );
 
@@ -304,7 +311,10 @@ class JoinClauseInfo
      * @param Grammar $grammar     The query grammar instance.
      * @param string  $pivotAlias  The alias for the pivot table.
      * @param string  $relatedAlias The alias for the related model's table.
-     * @return array{pivot: Expression, related: Expression}
+     * @return array{
+     *     pivot: Expression,
+     *     related: Expression
+     * }
      *
      * @throws \Exception If the related pivot key format is invalid.
      */
@@ -321,10 +331,10 @@ class JoinClauseInfo
         // Retrieve the primary key from the related model.
         $relatedKey = $this->relation->getRelated()->getKeyName();
 
-        $pivotExpr = new Expression(
+        $pivotExpr = new CompiledExpression(
             sprintf('%s.%s', $grammar->wrap($pivotAlias), $grammar->wrap($field))
         );
-        $relatedExpr = new Expression(
+        $relatedExpr = new CompiledExpression(
             sprintf('%s.%s', $grammar->wrap($relatedAlias), $grammar->wrap($relatedKey))
         );
 
@@ -355,7 +365,7 @@ class JoinClauseInfo
     /**
      * Create a new JoinClauseInfo instance from a relationship.
      *
-     * @param \Illuminate\Database\Eloquent\Relations\Relation $relation
+     * @param Relation<covariant Model,covariant Model,covariant mixed> $relation
      * @param string $joinType  The join type to use (defaults to 'left').
      * @return self
      *
@@ -373,7 +383,8 @@ class JoinClauseInfo
      * and then uses it to construct a JoinContext value object that encapsulates the join details,
      * the cumulative chain key, the current (base) model, and its current alias.
      *
-     * @param Relation $relation The Eloquent relationship instance.
+     * @param Relation<covariant Model,covariant Model,covariant mixed> $relation
+     *        The Eloquent relationship instance.
      * @param string   $chainKey The cumulative join key for the relationship chain.
      * @param Model    $currentModel The current base model instance.
      * @param string   $currentAlias The current alias for the base table.
@@ -408,7 +419,7 @@ class JoinClauseInfo
     /**
      * Build the exception used for an unsupported Eloquent relationship.
      *
-     * @param  Relation  $relation
+     * @param Relation<covariant Model,covariant Model,covariant mixed> $relation
      * @return \InvalidArgumentException
      */
     private static function unsupportedRelationship(

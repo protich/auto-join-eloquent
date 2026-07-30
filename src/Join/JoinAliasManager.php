@@ -89,8 +89,13 @@ class JoinAliasManager
         return $this->aliasPrefix;
     }
 
-
-    public function getAliasMap() {
+    /**
+     * Get the resolved alias map.
+     *
+     * @return array<string,string>
+     */
+    public function getAliasMap(): array
+    {
         return $this->aliasMap;
     }
 
@@ -177,13 +182,23 @@ class JoinAliasManager
      */
     public function resolveModelAlias(Model $model, string $chainKey, ?string $default = null): string
     {
-        if (property_exists($model, 'joinAliases') 
-            && isset($model->joinAliases[$chainKey]) // @phpstan-ignore-line
-            && ($customAlias = $model->joinAliases[$chainKey])
-            && !in_array($customAlias, $this->aliasMap, true)) {
-            /** @var string $customAlias */
+        if (! property_exists($model, 'joinAliases')) {
+            return $this->getAlias($chainKey, $default);
+        }
+
+        $aliases = $model->joinAliases;
+        $customAlias = is_array($aliases)
+            ? ($aliases[$chainKey] ?? null)
+            : null;
+
+        if (
+            is_string($customAlias)
+            && $customAlias !== ''
+            && ! in_array($customAlias, $this->aliasMap, true)
+        ) {
             $this->setAlias($chainKey, $customAlias);
         }
+
         return $this->getAlias($chainKey, $default);
     }
 }

@@ -3,10 +3,10 @@
 namespace protich\AutoJoinEloquent\Compilers;
 
 use protich\AutoJoinEloquent\AutoJoinQueryBuilder;
-use protich\AutoJoinEloquent\Compilers\SubqueryQueryCompiler;
 use protich\AutoJoinEloquent\Support\SubQueryExpression;
 use protich\AutoJoinEloquent\Support\CompiledExpression;
-use Illuminate\Database\Query\Expression;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use RuntimeException;
 
 /**
@@ -54,9 +54,8 @@ class SubqueryCompiler extends BaseCompiler
     {
         $model  = $this->outerBuilder->getBaseModel();
         $prefix = $this->outerBuilder->nextSubqueryPrefix();
-        $query  = $model->newQuery()->getQuery();
-
-        $builder = $model->newAutoJoinBuilder($query);
+        $query = $model->getConnection()->query();
+        $builder = new AutoJoinQueryBuilder($query);
 
         $builder->setModel($model);
         $builder->setBaseModel($model);
@@ -143,24 +142,17 @@ class SubqueryCompiler extends BaseCompiler
         );
         $resolvedSql = $resolved->getValue($grammar);
 
-        if (! is_string($resolvedSql)) {
-            throw new RuntimeException(sprintf(
-                'Resolved subquery path [%s] did not produce SQL.',
-                $path
-            ));
-        }
-
         $builder->select(
             new CompiledExpression($resolvedSql)
         );
 
-        $builder->whereRaw(sprintf(
+        $builder->whereRaw(new CompiledExpression(sprintf(
             '%s.%s = %s.%s',
             $grammar->wrap($innerAlias),
             $grammar->wrap($innerKey),
             $grammar->wrap($this->getOuterAlias()),
             $grammar->wrap($this->getOuterKeyName())
-        ));
+        )));
 
         $query = $builder->getQuery();
 
@@ -373,29 +365,27 @@ class SubqueryCompiler extends BaseCompiler
             false,
             $relationshipPath
         );
-        $terminal = $resolved instanceof Expression
-            ? $resolved->getValue($grammar) // @phpstan-ignore-line
-            : (string) $resolved;
+        $terminal = $resolved->getValue($grammar);
 
         $innerAlias = $builder->getBaseAlias();
         $innerKey   = $builder->getBaseModel()->getKeyName();
 
         $builder->select(new CompiledExpression('1'));
 
-        $builder->whereRaw(sprintf(
+        $builder->whereRaw(new CompiledExpression(sprintf(
             '%s.%s = %s.%s',
             $grammar->wrap($innerAlias),
             $grammar->wrap($innerKey),
             $grammar->wrap($this->getOuterAlias()),
             $grammar->wrap($this->getOuterKeyName())
-        ));
+        )));
 
-        $builder->whereRaw(sprintf(
+        $builder->whereRaw(new CompiledExpression(sprintf(
             '%s = %s.%s',
             $terminal,
             $grammar->wrap($targetAlias),
             $grammar->wrap($targetField)
-        ));
+        )));
 
         $query = $builder->getQuery();
 
@@ -418,15 +408,25 @@ class SubqueryCompiler extends BaseCompiler
      * of the final relation.
      *
      * @param  array<int, array{relation: string, join: string}> $chain
-     * @return \Illuminate\Database\Eloquent\Model
+     * @return Model
      */
-    protected function resolveExistsCountTargetModel(array $chain)
+    protected function resolveExistsCountTargetModel(array $chain): Model
     {
         $model = $this->outerBuilder->getBaseModel();
 
         foreach ($chain as $step) {
             $relation = $step['relation'];
-            $rel      = $model->{$relation}();
+            $rel = Relation::noConstraints(
+                fn () => $model->{$relation}()
+            );
+
+            if (! $rel instanceof Relation) {
+                throw new RuntimeException(sprintf(
+                    'Method [%s] on model [%s] did not return an Eloquent relationship.',
+                    $relation,
+                    $model::class
+                ));
+            }
 
             $model = $rel->getRelated();
         }
@@ -480,6 +480,15 @@ class SubqueryCompiler extends BaseCompiler
                     $path
                 ));
             }
+        }
+
+        if (
+            $targetRelation === null
+            || $targetChain === null
+        ) {
+            throw new RuntimeException(
+                'EXISTS count paths must not be empty.'
+            );
         }
 
         return [

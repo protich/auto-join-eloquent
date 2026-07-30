@@ -46,9 +46,11 @@ class SubqueryQueryCompiler extends QueryCompiler
             }
 
             if ($clause instanceof Expression) {
-                return new CompiledExpression(
-                    $clause->getValue($this->builder->getGrammar()) // @phpstan-ignore-line
-                );
+                $value = $clause->getValue($this->builder->getGrammar());
+
+                return is_string($value)
+                    ? new CompiledExpression($value)
+                    : $clause;
             }
 
             if (is_array($clause) && isset($clause['column'])) {
@@ -59,9 +61,13 @@ class SubqueryQueryCompiler extends QueryCompiler
                 }
 
                 if ($column instanceof Expression) {
-                    $clause['column'] = new CompiledExpression(
-                        $column->getValue($this->builder->getGrammar()) // @phpstan-ignore-line
+                    $value = $column->getValue(
+                        $this->builder->getGrammar()
                     );
+
+                    if (is_string($value)) {
+                        $clause['column'] = new CompiledExpression($value);
+                    }
                 }
 
                 return $clause;

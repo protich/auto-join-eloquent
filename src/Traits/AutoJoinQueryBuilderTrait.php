@@ -3,6 +3,7 @@
 namespace protich\AutoJoinEloquent\Traits;
 
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use protich\AutoJoinEloquent\AutoJoinQueryBuilder;
 use protich\AutoJoinEloquent\Model\AutoJoinRelation;
 use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
@@ -108,7 +109,7 @@ trait AutoJoinQueryBuilderTrait
      * @return AutoJoinQueryBuilder
      */
     protected function newAutoJoinQueryBuilder(
-        $query,
+        QueryBuilder $query,
         string $joinType = 'left'
     ): AutoJoinQueryBuilder {
         $builder = new AutoJoinQueryBuilder($query);
@@ -137,12 +138,12 @@ trait AutoJoinQueryBuilderTrait
      * @return AutoJoinQueryBuilder
      */
     public function newAutoJoinBuilder(
-        $query,
+        QueryBuilder $query,
         string $joinType = 'left'
     ): AutoJoinQueryBuilder {
         $builder = $this->newAutoJoinQueryBuilder($query, $joinType);
 
-        $query->beforeQuery(function ($query) use ($builder) {
+        $query->beforeQuery(function (QueryBuilder $query) use ($builder) {
             $builder->autoJoinQuery($query);
         });
 

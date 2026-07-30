@@ -2,6 +2,7 @@
 
 namespace protich\AutoJoinEloquent\Compilers;
 
+use Illuminate\Contracts\Database\Query\Expression as ExpressionContract;
 use protich\AutoJoinEloquent\AutoJoinQueryBuilder;
 use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
 use protich\AutoJoinEloquent\Support\CompiledExpression;
@@ -98,9 +99,9 @@ abstract class BaseCompiler
             // Compile structured clause arrays.
             if (is_array($clause)) {
                 // ['column' => 'user.id__count']
-                if (isset($clause['column'])) {
+                if (is_string($clause['column'] ?? null)) {
                     $compiledColumn = $this->compileColumn(
-                        (string) $clause['column'] // @phpstan-ignore-line
+                        $clause['column']
                     );
                     $clause['column'] = $compiledColumn;
 
@@ -142,9 +143,12 @@ abstract class BaseCompiler
      *
      * @param string $column
      * @param bool $allowAlias
-     * @return Expression
+     * @return CompiledExpression
      */
-    public function compileColumn(string $column, bool $allowAlias = false): Expression
+    public function compileColumn(
+        string $column,
+        bool $allowAlias = false
+    ): CompiledExpression
     {
         if ($modelPath = $this->parseDescribedPathExpression($column)) {
             return $this->compileModelDefinedPath($modelPath, $allowAlias);
@@ -158,12 +162,12 @@ abstract class BaseCompiler
      *
      * @param  string $column
      * @param  bool   $allowAlias
-     * @return Expression
+     * @return CompiledExpression
      */
     protected function compileStandardColumn(
         string $column,
         bool $allowAlias = false
-    ): Expression {
+    ): CompiledExpression {
         if ($aggregate = $this->parseAggregateExpression($column)) {
             return $this->compileAggregateExpression($aggregate, $allowAlias);
         }
@@ -211,13 +215,12 @@ abstract class BaseCompiler
         if ($bitwise = $this->parseBitwiseExpression($sql)) {
             if ($this->shouldResolveColumn($bitwise['left'])) {
                 $resolved = $this->resolveColumnExpression($bitwise['left'], null, false);
-                // @phpstan-ignore-next-line
-                $left = $resolved instanceof Expression
-                    ? $resolved->getValue($this->builder->getGrammar()) // @phpstan-ignore-line
-                    : (string) $resolved;
+                $left = $resolved->getValue(
+                    $this->builder->getGrammar()
+                );
 
                 return sprintf('%s %s %s',
-                    $left, $bitwise['operator'], $bitwise['right']); // @phpstan-ignore-line
+                    $left, $bitwise['operator'], $bitwise['right']);
             }
         }
 
@@ -347,7 +350,7 @@ abstract class BaseCompiler
             return [
                 'aggregateFunction' => $function,
                 'innerExpression'   => trim($m[1]),
-                'alias'             => isset($m[3]) && $m[3] !== '' ? $m[3] : null, // @phpstan-ignore-line
+                'alias'             => $m[3] ?? null,
                 'outerExpression'   => '',
             ];
         }
@@ -371,7 +374,7 @@ abstract class BaseCompiler
     {
         $expr = $this->compileAggregateExpression($info, false);
 
-        $sql = $expr->getValue($this->builder->getGrammar()); // @phpstan-ignore-line
+        $sql = $expr->getValue($this->builder->getGrammar());
 
         if (! empty($info['outerExpression'])) {
             $sql .= ' ' . (string) $info['outerExpression'];
@@ -391,13 +394,13 @@ abstract class BaseCompiler
      * } $info
      * @param  bool        $useDefaultAlias
      * @param  string|null $relationshipPath
-     * @return Expression
+     * @return CompiledExpression
      */
     protected function compileAggregateExpression(
         array $info,
         bool $useDefaultAlias = false,
         ?string $relationshipPath = null
-    ): Expression {
+    ): CompiledExpression {
         $grammar  = $this->builder->getGrammar();
         $parsed   = $this->parseColumnParts($info['innerExpression']);
         $resolved = $this->resolveColumnExpression(
@@ -407,20 +410,20 @@ abstract class BaseCompiler
             $relationshipPath
         );
 
-        $innerSql = $resolved->getValue($grammar); // @phpstan-ignore-line
+        $innerSql = $resolved->getValue($grammar);
         $distinct = (bool) ($info['distinct'] ?? false);
 
         $alias = $info['alias']
             ?? ($useDefaultAlias
                 ? $this->makeAggregateAlias($info['aggregateFunction'], $innerSql)
-                : null); // @phpstan-ignore-line
+                : null);
 
         $sql = sprintf(
             '%s(%s%s)',
             $info['aggregateFunction'],
             $distinct ? 'DISTINCT ' : '',
             $innerSql
-        ); // @phpstan-ignore-line
+        );
 
         return $this->makeCompiledExpression($sql, $alias);
     }
@@ -463,31 +466,32 @@ abstract class BaseCompiler
     protected function compileCoalesce(array $info): string
     {
         $expr = $this->compileCoalesceExpression($info);
-        // @phpstan-ignore-next-line
         $sql = $expr->getValue($this->builder->getGrammar());
 
         if (!empty($info['outerExpression'])) {
-            $sql .= ' ' . (string) $info['outerExpression']; // @phpstan-ignore-line
+            $sql .= ' ' . $info['outerExpression'];
         }
 
-        return $sql; // @phpstan-ignore-line
+        return $sql;
     }
 
     /**
      * Compile a COALESCE(...) expression into a wrapped Expression.
      *
      * @param array{fields: string[], alias: string|null} $info
-     * @return Expression
+     * @return CompiledExpression
      */
-    protected function compileCoalesceExpression(array $info): Expression
+    protected function compileCoalesceExpression(
+        array $info
+    ): CompiledExpression
     {
         $grammar = $this->builder->getGrammar();
 
-        $resolved = array_map(function ($field) use ($grammar) {
+        $resolved = array_map(function (string $field) use ($grammar): string {
             $column = $this->parseColumnParts($field)['column'];
             $expr = $this->resolveColumnExpression($column, null, false);
-            // @phpstan-ignore-next-line
-            return $expr->getValue($grammar); // @phpstan-ignore-line
+
+            return $expr->getValue($grammar);
         }, $info['fields']);
 
         $sql = 'COALESCE(' . implode(', ', $resolved) . ')';
@@ -589,9 +593,12 @@ abstract class BaseCompiler
      *     alias:?string
      * } $modelPath
      * @param  bool $allowAlias
-     * @return Expression
+     * @return CompiledExpression
      */
-    protected function compileModelDefinedPath(array $modelPath, bool $allowAlias = false): Expression
+    protected function compileModelDefinedPath(
+        array $modelPath,
+        bool $allowAlias = false
+    ): CompiledExpression
     {
         $descriptor = $modelPath['descriptor'];
         $alias = $modelPath['alias'] ?? null;
@@ -641,15 +648,24 @@ abstract class BaseCompiler
      * @param  string|null          $alias
      * @param  bool                 $allowAlias
      * @param  string               $sourcePath
+     * @return CompiledExpression
      */
     protected function compileModelPathDescriptor(
         ExpressionDescriptor $descriptor,
         ?string $alias,
         bool $allowAlias,
         string $sourcePath
-    ): Expression {
+    ): CompiledExpression {
+        $path = $descriptor->getPath();
+
+        if ($path === null) {
+            throw new \LogicException(
+                'A path descriptor must contain a path.'
+            );
+        }
+
         return $this->resolveColumnExpression(
-            $descriptor->getPath(), // @phpstan-ignore-line
+            $path,
             $allowAlias ? $alias : null,
             $allowAlias,
             $sourcePath
@@ -666,13 +682,14 @@ abstract class BaseCompiler
      * @param  string|null          $alias
      * @param  bool                 $allowAlias
      * @param  string               $sourcePath
+     * @return CompiledExpression
      */
     protected function compileModelCountDescriptor(
         ExpressionDescriptor $descriptor,
         ?string $alias,
         bool $allowAlias,
         string $sourcePath
-    ): Expression {
+    ): CompiledExpression {
         $paths = $descriptor->paths();
 
         if (count($paths) === 1) {
@@ -708,13 +725,14 @@ abstract class BaseCompiler
      * @param  string|null          $alias
      * @param  bool                 $allowAlias
      * @param  string               $sourcePath
+     * @return CompiledExpression
      */
     protected function compileMultiPathCountDescriptor(
         ExpressionDescriptor $descriptor,
         ?string $alias,
         bool $allowAlias,
         string $sourcePath
-    ): Expression {
+    ): CompiledExpression {
         if (! $descriptor->distinct()) {
             throw new \RuntimeException(
                 'Multi-path count descriptors currently require [distinct => true].'
@@ -765,13 +783,14 @@ abstract class BaseCompiler
      * @param  string|null          $alias
      * @param  bool                 $allowAlias
      * @param  string               $sourcePath
+     * @return CompiledExpression
      */
     protected function compileExistsCountDescriptor(
         ExpressionDescriptor $descriptor,
         ?string $alias,
         bool $allowAlias,
         string $sourcePath
-    ): Expression {
+    ): CompiledExpression {
         if (! $descriptor->distinct()) {
             throw new \RuntimeException(
                 'EXISTS-based count descriptors currently require [distinct => true].'
@@ -820,13 +839,14 @@ abstract class BaseCompiler
      * @param  string|null          $alias
      * @param  bool                 $allowAlias
      * @param  string               $sourcePath
+     * @return CompiledExpression
      */
     protected function compileUnionCountDescriptor(
         ExpressionDescriptor $descriptor,
         ?string $alias,
         bool $allowAlias,
         string $sourcePath
-    ): Expression {
+    ): CompiledExpression {
         if (! $descriptor->distinct()) {
             throw new \RuntimeException(
                 'Multi-path count descriptors currently require [distinct => true].'
@@ -960,11 +980,12 @@ abstract class BaseCompiler
      */
     protected function countOriginalBindings(mixed $clause): int
     {
-        if ($clause instanceof Expression) {
-            return substr_count(
-                $clause->getValue($this->builder->getGrammar()), // @phpstan-ignore-line
-                '?'
-            );
+        if ($clause instanceof ExpressionContract) {
+            $value = $clause->getValue($this->builder->getGrammar());
+
+            return is_string($value)
+                ? substr_count($value, '?')
+                : 0;
         }
 
         if (! is_array($clause)) {
@@ -984,7 +1005,9 @@ abstract class BaseCompiler
             'JsonLength',
             'Fulltext',
         ], true)) {
-            return ($clause['value'] ?? null) instanceof Expression ? 0 : 1;
+            return ($clause['value'] ?? null) instanceof ExpressionContract
+                ? 0
+                : 1;
         }
 
         $values = $clause['values'] ?? null;
@@ -1015,14 +1038,14 @@ abstract class BaseCompiler
      * @param  string|null  $alias
      * @param  bool         $allowAutoAliasing
      * @param  string|null  $relationshipPath
-     * @return Expression
+     * @return CompiledExpression
      */
     protected function resolveColumnExpression(
         string $column,
         ?string $alias = null,
         bool $allowAutoAliasing = true,
         ?string $relationshipPath = null
-    ): Expression {
+    ): CompiledExpression {
         if ($modelPath = $this->parseDescribedPathExpression($column)) {
             if ($alias !== null && empty($modelPath['alias'])) {
                 $modelPath['alias'] = $alias;
@@ -1117,13 +1140,13 @@ abstract class BaseCompiler
      *
      * @param  string       $sql
      * @param  string|null  $alias
-     * @return Expression
+     * @return CompiledExpression
      */
     protected function makeExpression(
         string $sql,
         ?string $alias = null
-    ): Expression {
-        return new Expression(
+    ): CompiledExpression {
+        return new CompiledExpression(
             $this->normalizeSqlExpression($sql, $alias)
         );
     }
@@ -1205,7 +1228,7 @@ abstract class BaseCompiler
             $column = array_pop($parts);
             $target = array_pop($parts);
 
-            if ($column === null || $column === '' || $target === null || $target === '') {
+            if ($column === '' || $target === null || $target === '') {
                 return false;
             }
 
