@@ -109,7 +109,15 @@ abstract class AutoJoinTestCase extends TestCase
         // If schema is not set, get it from the environment variable (AUTO_JOIN_TEST_SCHEMA)
         // or default to "default".
         if ($this->schema === null) {
-            $this->schema = env('AUTO_JOIN_TEST_SCHEMA', 'default'); // @phpstan-ignore-line
+            $schema = env('AUTO_JOIN_TEST_SCHEMA', 'default');
+
+            if (! is_string($schema)) {
+                throw new \UnexpectedValueException(
+                    'AUTO_JOIN_TEST_SCHEMA must be a string.'
+                );
+            }
+
+            $this->schema = $schema;
         }
 
         // Configure the in‑memory SQLite database.
@@ -216,7 +224,9 @@ abstract class AutoJoinTestCase extends TestCase
         foreach ($results as $row) {
             $row = is_object($row) ? get_object_vars($row) : (array)$row;
             foreach ($headers as $header) {
-                $value = array_key_exists($header, $row) ? (string)$row[$header] : ''; // @phpstan-ignore-line
+                $value = array_key_exists($header, $row)
+                    ? $this->formatDebugValue($row[$header])
+                    : '';
                 $widths[$header] = max($widths[$header], strlen($value));
             }
         }
@@ -246,12 +256,39 @@ abstract class AutoJoinTestCase extends TestCase
             $row = is_object($row) ? get_object_vars($row) : (array)$row;
             $rowLine = '|';
             foreach ($headers as $header) {
-                $value = array_key_exists($header, $row) ? (string)$row[$header] : ''; // @phpstan-ignore-line
+                $value = array_key_exists($header, $row)
+                    ? $this->formatDebugValue($row[$header])
+                    : '';
                 $rowLine .= ' ' . str_pad($value, $widths[$header], ' ', STR_PAD_RIGHT) . ' |';
             }
             echo $rowLine . "\n";
         }
         echo $line . "\n";
+    }
+
+    /**
+     * Format a value for debug table output.
+     *
+     * @param  mixed $value
+     * @return string
+     */
+    private function formatDebugValue(mixed $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+
+        if (is_scalar($value) || $value instanceof \Stringable) {
+            return (string) $value;
+        }
+
+        $encoded = json_encode($value);
+
+        return $encoded === false ? '' : $encoded;
     }
 
     /**
@@ -273,7 +310,6 @@ abstract class AutoJoinTestCase extends TestCase
     {
         if (is_string($source)) {
             // Fetch results from the specified table.
-             /** @phpstan-ignore-next-line */
             $results = array_map('get_object_vars', $this->db->table($source)->get()->all());
             $title = $title ?: $source;
         } else {
@@ -302,7 +338,7 @@ abstract class AutoJoinTestCase extends TestCase
     protected function assertTablesNonEmpty(?array $tables = null): void
     {
         $tables = $tables ?? $this->seeder->getTables();
-        $this->assertIsArray($tables, 'Tables should be an array.'); // @phpstan-ignore-line
+
         foreach ($tables as $table) {
             /** @var string $table */
             $this->assertNonEmptyResults($table, $table);
@@ -315,7 +351,9 @@ abstract class AutoJoinTestCase extends TestCase
      * This method outputs the compiled SQL query in green if either the global debug flag
      * or the forcedDebug parameter is true, then returns the SQL string.
      *
-     * @param \Illuminate\Database\Query\Builder $query       The query builder instance.
+     * @param \Illuminate\Database\Query\Builder
+     *     |\Illuminate\Database\Eloquent\Builder<\Illuminate\Database\Eloquent\Model> $query
+     *     The query builder instance.
      * @param bool                                 $forcedDebug Optional flag to force debug output regardless of the global debug flag (default false).
      * @return string The compiled SQL query.
      */

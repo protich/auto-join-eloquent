@@ -7,6 +7,8 @@ use protich\AutoJoinEloquent\Traits\QueryJoinerTrait;
 
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 
 // Inline Model class that doesn't use AutoJoinTrait
@@ -19,9 +21,9 @@ class User extends Model
 
     /**
      * Summary of agent
-     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     * @return HasOne<Agent,$this>
      */
-    public function agent()
+    public function agent(): HasOne
     {
         return $this->hasOne(Agent::class);
     }
@@ -36,9 +38,9 @@ class Agent extends Model
 
     /**
      * Summary of user
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return BelongsTo<User,$this>
      */
-    public function user()
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
     }
@@ -64,18 +66,17 @@ class QueryJoinerIntegrationTest extends AutoJoinTestCase
     {
 
         // Build a query using auto-join notation.
-        /** @phpstan-ignore-next-line */
-        $query = User::query()->select([
-            'name as agent',
-            'email',
-            'agent|inner.id as agent_id',  // Use INNER JOIN for the agent relationship.
-            'agent.position',
-        ])->withAutoJoins();
+        $model = new User();
+        $query = $model
+            ->scopeWithAutoJoins(User::query())
+            ->select([
+                'name as agent',
+                'email',
+                'agent|inner.id as agent_id',
+                'agent.position',
+            ]);
 
         // Retrieve the final SQL using debugSql() for inspection.
-        /**
-         * @var \Illuminate\Database\Query\Builder $query
-         */
         $sql = $this->debugSql($query);
         $this->assertStringContainsStringIgnoringCase('INNER JOIN', $sql, 'The query should include an INNER JOIN for the agent relationship.');
         $this->assertStringContainsStringIgnoringCase('JOIN', $sql, 'The query should include JOIN clauses for nested relationships.');

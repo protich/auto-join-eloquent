@@ -124,7 +124,7 @@ class ColumnNormalizationTest extends AutoJoinTestCase
         $query = User::query()
             ->select(['name', 'agent__departments__count as dept_count'])
             ->groupBy('agent.id')
-            ->having('agent__departments__count', '>', 0) // @phpstan-ignore-line
+            ->having('agent__departments__count', '>', 0)
             ->orderBy('name', 'asc');
 
         $sql = $this->debugSql($query);

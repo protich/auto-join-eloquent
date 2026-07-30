@@ -38,7 +38,10 @@ class ComplexRelationshipSubqueryTest extends AutoJoinTestCase
         $row = $query->first();
 
         $this->assertNotNull($row);
-        $this->assertSame(1, (int) $row->qualified_count);
+        $this->assertSame(
+            1,
+            $this->integerAttribute($row, 'qualified_count')
+        );
     }
 
     /**
@@ -67,7 +70,10 @@ class ComplexRelationshipSubqueryTest extends AutoJoinTestCase
         $row = $query->first();
 
         $this->assertNotNull($row);
-        $this->assertGreaterThan(0, (int) $row->mixed_count);
+        $this->assertGreaterThan(
+            0,
+            $this->integerAttribute($row, 'mixed_count')
+        );
     }
 
     /**
@@ -80,7 +86,7 @@ class ComplexRelationshipSubqueryTest extends AutoJoinTestCase
         $query = Agent::query()
             ->select('id')
             ->groupBy('id')
-            ->having('model__qualifiedDepartmentCount', '>', 0); // @phpstan-ignore-line
+            ->having('model__qualifiedDepartmentCount', '>', 0);
 
         $sql = $this->debugSql($query);
 
@@ -103,8 +109,8 @@ class ComplexRelationshipSubqueryTest extends AutoJoinTestCase
         $query = Agent::query()
             ->select('id')
             ->groupBy('id')
-            ->having('model__qualifiedDepartmentCount', '>', 0) // @phpstan-ignore-line
-            ->having('model__mixedComplexCount', '>', 0); // @phpstan-ignore-line
+            ->having('model__qualifiedDepartmentCount', '>', 0)
+            ->having('model__mixedComplexCount', '>', 0);
 
         $sql = $this->debugSql($query);
 
@@ -135,5 +141,31 @@ class ComplexRelationshipSubqueryTest extends AutoJoinTestCase
             $query->getBindings()
         );
         $this->assertNotEmpty($query->get());
+    }
+
+    /**
+     * Read an integer-valued projected model attribute.
+     *
+     * @param  \Illuminate\Database\Eloquent\Model|\stdClass $model
+     * @param  string                                             $attribute
+     * @return int
+     */
+    private function integerAttribute(
+        \Illuminate\Database\Eloquent\Model|\stdClass $model,
+        string $attribute
+    ): int {
+        $value = $model instanceof \Illuminate\Database\Eloquent\Model
+            ? $model->getAttribute($attribute)
+            : ($model->{$attribute} ?? null);
+
+        if (! is_numeric($value)) {
+            throw new \UnexpectedValueException(sprintf(
+                'Projected attribute [%s] must be numeric; [%s] given.',
+                $attribute,
+                get_debug_type($value)
+            ));
+        }
+
+        return (int) $value;
     }
 }

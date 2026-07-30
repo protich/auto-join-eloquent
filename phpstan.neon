@@ -5,8 +5,3 @@ parameters:
         - tests
     bootstrapFiles:
         - vendor/autoload.php
-    ignoreErrors:
-        -
-            identifier: property.notFound
-        -
-            identifier: property.nonObject

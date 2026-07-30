@@ -28,7 +28,7 @@ class AgentAggregateHavingTest extends AutoJoinTestCase
             'name as agent_name',
             'COUNT(agent__departments.id) as dept_count'
         ])->groupBy('agent.id')
-          ->having('dept_count', '>', 1); // @phpstan-ignore-line
+          ->having('dept_count', '>', 1);
 
         // Retrieve the generated SQL via debugSql() for inspection.
         $sql = $this->debugSql($query);
@@ -49,7 +49,7 @@ class AgentAggregateHavingTest extends AutoJoinTestCase
         // Check first record
         $result = $query->first();
         // Verify that a record is returned.
-        $this->assertNotEmpty($result, 'A record should be returned from the query.');
+        $this->assertNotNull($result, 'A record should be returned from the query.');
         // Verify that the agent name is present.
         $this->assertNotNull($result->agent_name, 'The agent name should be returned.');
         // Verify that the department count is present and numeric.

@@ -5,6 +5,7 @@ namespace protich\AutoJoinEloquent\Tests;
 use protich\AutoJoinEloquent\Traits\AutoJoinTrait;
 use protich\AutoJoinEloquent\Tests\Models\User;
 use protich\AutoJoinEloquent\Tests\Models\Agent;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class UserStaff extends User
 {
@@ -20,9 +21,9 @@ class UserStaff extends User
     ];
 
     /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     * @return HasOne<Agent,$this>
      */
-    public function agent()
+    public function agent(): HasOne
     {
         return $this->hasOne(Agent::class, 'user_id');
     }

@@ -47,7 +47,7 @@ class AgentAggregateTest extends AutoJoinTestCase
 
         // Verify that the returned record contains the expected fields.
         $result = $query->first();
-        $this->assertNotEmpty($result, 'A record should be returned from the query.');
+        $this->assertNotNull($result, 'A record should be returned from the query.');
         $this->assertNotNull($result->agent_name, 'The agent name should be returned.');
         $this->assertNotNull($result->dept_count, 'The department count should be returned.');
         $this->assertIsNumeric($result->dept_count, 'The department count should be numeric.');

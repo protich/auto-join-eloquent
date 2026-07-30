@@ -37,6 +37,16 @@ class Agent extends BaseModel
     public static array $autoJoinRelationDescriptions = [];
 
     /**
+     * Get calls made to the complex relationship description hook.
+     *
+     * @return list<array{name:string,path:string}>
+     */
+    public static function autoJoinRelationDescriptions(): array
+    {
+        return self::$autoJoinRelationDescriptions;
+    }
+
+    /**
      * Table name.
      *
      * @var string
@@ -205,8 +215,10 @@ class Agent extends BaseModel
      */
     public function userWithoutPhone(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'user_id')
-            ->whereNull('users.phone');
+        $relation = $this->belongsTo(User::class, 'user_id');
+        $relation->whereNull('users.phone');
+
+        return $relation;
     }
 
     /**
@@ -216,8 +228,10 @@ class Agent extends BaseModel
      */
     public function userWithPhone(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'user_id')
-            ->whereNotNull('users.phone');
+        $relation = $this->belongsTo(User::class, 'user_id');
+        $relation->whereNotNull('users.phone');
+
+        return $relation;
     }
 
     /**
@@ -227,8 +241,10 @@ class Agent extends BaseModel
      */
     public function invalidPivotUser(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'user_id')
-            ->where('users.name', 'Alice');
+        $relation = $this->belongsTo(User::class, 'user_id');
+        $relation->where('users.name', 'Alice');
+
+        return $relation;
     }
 
     /**
@@ -285,20 +301,23 @@ class Agent extends BaseModel
      */
     public function qualifiedDepartments(): BelongsToMany
     {
-        return $this->belongsToMany(
+        $relation = $this->belongsToMany(
             Department::class,
             'agent_department',
             'agent_id',
             'department_id'
-        )->where('departments.name', 'Support');
+        );
+        $relation->where('departments.name', 'Support');
+
+        return $relation;
     }
 
     /**
      * An agent belongs to a user.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return BelongsTo<User,$this>
      */
-    public function user()
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
@@ -306,9 +325,14 @@ class Agent extends BaseModel
     /**
      * Direct departments the agent belongs to.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     * @return BelongsToMany<
+     *     Department,
+     *     $this,
+     *     \Illuminate\Database\Eloquent\Relations\Pivot,
+     *     'pivot'
+     * >
      */
-    public function departments()
+    public function departments(): BelongsToMany
     {
         return $this->belongsToMany(
             Department::class,
@@ -323,9 +347,14 @@ class Agent extends BaseModel
      *
      * These provide indirect department access.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     * @return BelongsToMany<
+     *     Group,
+     *     $this,
+     *     \Illuminate\Database\Eloquent\Relations\Pivot,
+     *     'pivot'
+     * >
      */
-    public function groups()
+    public function groups(): BelongsToMany
     {
         return $this->belongsToMany(
             Group::class,

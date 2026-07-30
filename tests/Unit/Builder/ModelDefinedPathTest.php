@@ -185,6 +185,22 @@ class ModelDefinedPathTest extends AutoJoinTestCase
     }
 
     /**
+     * Test compiled FROM expressions can pass through compilation again.
+     */
+    public function test_query_can_be_compiled_more_than_once(): void
+    {
+        $builder = Agent::query();
+        $query = $builder->getQuery();
+
+        $builder->autoJoinQuery($query);
+        $firstSql = $query->toSql();
+
+        $builder->autoJoinQuery($query);
+
+        $this->assertSame($firstSql, $query->toSql());
+    }
+
+    /**
      * Test relation hooks receive the complete path without the marker.
      */
     public function test_relation_hook_receives_model_defined_path(): void
@@ -337,9 +353,10 @@ class ModelDefinedPathTest extends AutoJoinTestCase
             strlen(AutoJoinQueryBuilder::MODEL_PATH_PREFIX)
         );
 
-        $this->assertNotEmpty(Agent::$autoJoinRelationDescriptions);
+        $descriptions = Agent::autoJoinRelationDescriptions();
+        $this->assertNotEmpty($descriptions);
 
-        foreach (Agent::$autoJoinRelationDescriptions as $description) {
+        foreach ($descriptions as $description) {
             $this->assertSame($modelPath, $description['path']);
         }
     }

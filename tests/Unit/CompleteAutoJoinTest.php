@@ -6,6 +6,7 @@ use protich\AutoJoinEloquent\Tests\AutoJoinTestCase;
 use protich\AutoJoinEloquent\Tests\Models\User;
 use protich\AutoJoinEloquent\Tests\Models\Agent;
 use protich\AutoJoinEloquent\Tests\Models\Department;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * Inline UserStaff model extending User, providing a custom alias for 'agent'.
@@ -25,9 +26,9 @@ class UserStaff extends User
 
     /**
      * Summary of agent
-     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     * @return HasOne<Agent,$this>
      */
-    public function agent()
+    public function agent(): HasOne
     {
         return $this->hasOne(Agent::class, 'user_id');
     }
@@ -50,7 +51,7 @@ class CompleteAutoJoinTest extends AutoJoinTestCase
         ])
         ->where('agent.id', '=', 1)
         ->groupBy('agent.id')
-        ->having('dept_count', '>', 1) // @phpstan-ignore-line
+        ->having('dept_count', '>', 1)
         ->orderBy('name', 'asc');
 
         $sql = $this->debugSql($query);

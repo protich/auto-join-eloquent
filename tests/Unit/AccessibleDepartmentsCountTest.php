@@ -75,7 +75,7 @@ class AccessibleDepartmentsCountTest extends AutoJoinTestCase
                 'accessibleDepartments__id__count as accessible_departments_count',
             ])
             ->groupBy('id')
-            ->having('accessibleDepartments__id__count', '>', 0); // @phpstan-ignore-line
+            ->having('accessibleDepartments__id__count', '>', 0);
 
         $sql = $this->debugSql($query);
 
