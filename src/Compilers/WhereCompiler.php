@@ -33,12 +33,16 @@ class WhereCompiler extends BaseCompiler
      */
     public function compileColumn(string $column, bool $allowAlias = false): Expression
     {
+        if ($modelPath = $this->parseDescribedPathExpression($column)) {
+            return $this->compileModelDefinedPath($modelPath, false);
+        }
+
         if ($this->parseAggregateExpression($column)) {
             throw new Exception("Aggregate expressions are not allowed in WHERE clauses.");
         }
 
         // Aliasing not allowed — pass false explicitly
-        return parent::compileColumn($column, false);
+        return $this->compileStandardColumn($column, false);
     }
 
     /**

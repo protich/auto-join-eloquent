@@ -7,6 +7,8 @@ use protich\AutoJoinEloquent\AutoJoinQueryBuilder;
 use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
 use protich\AutoJoinEloquent\Tests\Models\Agent;
 use protich\AutoJoinEloquent\Tests\AutoJoinTestCase;
+use protich\AutoJoinEloquent\Tests\Models\Department;
+use protich\AutoJoinEloquent\Tests\Models\User;
 
 /**
  * Test: ModelDefinedPathTest
@@ -84,6 +86,102 @@ class ModelDefinedPathTest extends AutoJoinTestCase
         );
 
         $builder->describeModelDefinedPath('status');
+    }
+
+    /**
+     * Test an unresolved root path is offered to the base model.
+     */
+    public function test_unresolved_root_path_is_described_by_model(): void
+    {
+        $described = Agent::query()->describeUnresolvedPath('status');
+
+        $this->assertNotNull($described);
+        $this->assertSame('status', $described['path']);
+        $this->assertSame(Agent::class, $described['model']);
+        $this->assertSame('flags', $described['descriptor']->getPath());
+    }
+
+    /**
+     * Test fallback occurs at the first unresolved downstream hop.
+     */
+    public function test_downstream_model_receives_only_unresolved_remainder(): void
+    {
+        Department::$autoJoinPathRequests = [];
+
+        $query = User::query()->select(
+            'agent__departments__displayName as department_name'
+        );
+        $sql = $query->toSql();
+
+        $this->assertSame(
+            ['displayName'],
+            Department::$autoJoinPathRequests
+        );
+        $this->assertStringContainsString(
+            '"D"."name" as "department_name"',
+            $sql
+        );
+    }
+
+    /**
+     * Test the explicit marker can route to a downstream model.
+     */
+    public function test_explicit_path_can_fall_back_at_downstream_hop(): void
+    {
+        Department::$autoJoinPathRequests = [];
+
+        $sql = User::query()->select(
+            'model__agent__departments__displayName as department_name'
+        )->toSql();
+
+        $this->assertSame(
+            ['displayName'],
+            Department::$autoJoinPathRequests
+        );
+        $this->assertStringContainsString(
+            '"D"."name" as "department_name"',
+            $sql
+        );
+    }
+
+    /**
+     * Test normal physical fields take precedence over model fallback.
+     */
+    public function test_physical_column_takes_precedence(): void
+    {
+        $builder = Agent::query();
+
+        $this->assertNull($builder->describeUnresolvedPath('position'));
+        $this->assertNull(
+            $builder->describeUnresolvedPath('departments__name')
+        );
+    }
+
+    /**
+     * Test a declined path preserves permissive legacy resolution.
+     */
+    public function test_declined_unknown_path_remains_permissive(): void
+    {
+        $builder = Agent::query();
+
+        $this->assertNull($builder->describeUnresolvedPath('whatever'));
+        $this->assertStringContainsString(
+            '"whatever" as "literal"',
+            $builder->select('whatever as literal')->toSql()
+        );
+    }
+
+    /**
+     * Test non-path expressions are never offered to a model.
+     */
+    public function test_literal_expressions_are_not_probed(): void
+    {
+        $builder = Agent::query();
+
+        $this->assertNull($builder->describeUnresolvedPath('1'));
+        $this->assertNull(
+            $builder->describeUnresolvedPath('"whatever"')
+        );
     }
 
     /**

@@ -7,23 +7,23 @@ use InvalidArgumentException;
 /**
  * Class: PathRequest
  *
- * The complete model-defined path submitted to a model hook.
+ * The complete unresolved path remainder submitted to a model hook.
  *
- * The path is deliberately kept intact so the auto-joiner does not interpret
- * application-defined segments. The auto-joiner removes its reserved marker
- * before constructing the request.
+ * Normal relationship hops are resolved before the request is constructed.
+ * The remaining model-owned expression is kept intact so the package does not
+ * impose application-specific segmentation rules.
  */
 final readonly class PathRequest
 {
     /**
-     * Complete application-defined path without the auto-join marker.
+     * Complete model-local remainder without the auto-join marker.
      *
      * @var non-empty-string
      */
     public string $path;
 
     /**
-     * Create a request for a complete model-defined path.
+     * Create a request for a complete unresolved path remainder.
      *
      * @param  string  $path
      *

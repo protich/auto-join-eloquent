@@ -28,11 +28,11 @@ class AutoJoinQueryBuilder extends EloquentBuilder
     public const MODEL_PATH_PREFIX = 'model__';
 
     /**
-     * Cache for the base model's columns.
+     * Cached table columns used while probing paths at downstream models.
      *
-     * @var array<mixed>|null
+     * @var array<string,list<string>>
      */
-    protected $baseModelColumns = null;
+    protected array $modelColumns = [];
 
     /**
      * Option to use simple sequential aliases.
@@ -618,7 +618,8 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      * @param  string $column
      * @return array{
      *     path:string,
-     *     descriptor:ExpressionDescriptor
+     *     descriptor:ExpressionDescriptor,
+     *     model:class-string<Model>
      * }
      *
      * @throws \InvalidArgumentException If the column is not a valid
@@ -647,20 +648,262 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             ));
         }
 
-        $descriptor = $model->describeAutoJoinPath($request);
+        $descriptor = $this->askModelToDescribePath($model, $request);
 
-        if (! $descriptor instanceof ExpressionDescriptor) {
+        if ($descriptor === null) {
+            $described = $this->describeUnresolvedPath($request->path);
+
+            if ($described !== null) {
+                return $described;
+            }
+
             throw new \RuntimeException(sprintf(
-                'Model [%s] must return an ExpressionDescriptor for auto-join path [%s].',
+                'Model [%s] does not support auto-join path [%s].',
                 $model::class,
-                $column
+                $request->path
             ));
         }
 
         return [
             'path' => $request->path,
             'descriptor' => $descriptor,
+            'model' => $model::class,
         ];
+    }
+
+    /**
+     * Ask the model at the first unresolved hop to describe the remainder.
+     *
+     * Normal columns and relationships take precedence. Returning null means
+     * the expression should continue through the existing permissive compiler
+     * behavior.
+     *
+     * @param  string $column Normalized marker-free column expression.
+     * @return array{
+     *     path:string,
+     *     descriptor:ExpressionDescriptor,
+     *     model:class-string<Model>
+     * }|null
+     */
+    public function describeUnresolvedPath(string $column): ?array
+    {
+        $parsed = $this->parseProbePath($column);
+
+        if ($parsed === null) {
+            return null;
+        }
+
+        $model = $this->getBaseModel();
+        $prefix = [];
+        $lastIndex = count($parsed['segments']) - 1;
+
+        foreach ($parsed['segments'] as $index => $segment) {
+            $isFinal = $index === $lastIndex;
+            $mayBeRelation = count($parsed['segments']) > 1
+                && ! ($isFinal && $parsed['explicitField']);
+
+            if ($mayBeRelation) {
+                $relation = $this->probeRelationship(
+                    $model,
+                    $segment['name']
+                );
+
+                if ($relation !== null) {
+                    $prefix[] = $segment['raw'];
+                    $model = $relation->getRelated();
+                    continue;
+                }
+            }
+
+            if (
+                $isFinal
+                && $this->isModelColumn($model, $segment['name'])
+            ) {
+                return null;
+            }
+
+            $remaining = implode('__', array_column(
+                array_slice($parsed['segments'], $index),
+                'name'
+            ));
+            $request = new PathRequest($remaining);
+            $descriptor = $this->askModelToDescribePath($model, $request);
+
+            if ($descriptor === null) {
+                return null;
+            }
+
+            return [
+                'path' => $request->path,
+                'descriptor' => $this->rebaseDescriptor(
+                    $descriptor,
+                    $prefix
+                ),
+                'model' => $model::class,
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * Parse an expression into segments suitable for non-mutating probing.
+     *
+     * @param  string $column
+     * @return array{
+     *     segments:list<array{name:string,raw:string}>,
+     *     explicitField:bool
+     * }|null
+     */
+    protected function parseProbePath(string $column): ?array
+    {
+        $column = trim($column);
+
+        if (
+            $column === ''
+            || $this->isModelDefinedPath($column)
+            || ! preg_match(
+                '/^[A-Za-z_][A-Za-z0-9_]*(?:\|[A-Za-z]+)?'
+                . '(?:__[A-Za-z_][A-Za-z0-9_]*(?:\|[A-Za-z]+)?)*'
+                . '(?:\.[A-Za-z_][A-Za-z0-9_]*)?$/',
+                $column
+            )
+        ) {
+            return null;
+        }
+
+        $dotPosition = strrpos($column, '.');
+        $explicitField = $dotPosition !== false;
+        $chain = $explicitField
+            ? substr($column, 0, $dotPosition)
+            : $column;
+        $segments = array_values(array_filter(explode('__', $chain)));
+
+        if ($explicitField) {
+            $segments[] = substr($column, $dotPosition + 1);
+        }
+
+        $baseTable = $this->getBaseModel()->getTable();
+
+        if (
+            count($segments) > 1
+            && strcasecmp(explode('|', $segments[0], 2)[0], $baseTable) === 0
+        ) {
+            array_shift($segments);
+        }
+
+        if ($segments === []) {
+            return null;
+        }
+
+        return [
+            'segments' => array_map(
+                static function (string $segment): array {
+                    $parts = explode('|', $segment, 2);
+
+                    return [
+                        'name' => $parts[0],
+                        'raw' => $segment,
+                    ];
+                },
+                $segments
+            ),
+            'explicitField' => $explicitField,
+        ];
+    }
+
+    /**
+     * Resolve a relationship for probing without applying its constraints.
+     *
+     * @param  Model  $model
+     * @param  string $name
+     * @return Relation|null
+     */
+    protected function probeRelationship(
+        Model $model,
+        string $name
+    ): ?Relation {
+        if (! method_exists($model, $name)) {
+            return null;
+        }
+
+        try {
+            $relation = Relation::noConstraints(
+                fn () => $model->{$name}()
+            );
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $relation instanceof Relation ? $relation : null;
+    }
+
+    /**
+     * Ask a model to describe a marker-free path.
+     *
+     * @param  Model       $model
+     * @param  PathRequest $request
+     * @return ExpressionDescriptor|null
+     */
+    protected function askModelToDescribePath(
+        Model $model,
+        PathRequest $request
+    ): ?ExpressionDescriptor {
+        if (! method_exists($model, 'describeAutoJoinPath')) {
+            return null;
+        }
+
+        $descriptor = $model->describeAutoJoinPath($request);
+
+        if (
+            $descriptor !== null
+            && ! $descriptor instanceof ExpressionDescriptor
+        ) {
+            throw new \RuntimeException(sprintf(
+                'Model [%s] must return an ExpressionDescriptor or null for auto-join path [%s].',
+                $model::class,
+                $request->path
+            ));
+        }
+
+        return $descriptor;
+    }
+
+    /**
+     * Rebase a model-relative descriptor onto resolved relationship hops.
+     *
+     * @param  ExpressionDescriptor $descriptor
+     * @param  list<string>         $prefix
+     * @return ExpressionDescriptor
+     */
+    protected function rebaseDescriptor(
+        ExpressionDescriptor $descriptor,
+        array $prefix
+    ): ExpressionDescriptor {
+        if ($prefix === []) {
+            return $descriptor;
+        }
+
+        $prefixPath = implode('__', $prefix);
+        $paths = array_map(
+            static fn (string $path): string =>
+                $prefixPath . '__' . $path,
+            $descriptor->paths()
+        );
+
+        return match ($descriptor->type()) {
+            ExpressionDescriptor::TYPE_PATH =>
+                ExpressionDescriptor::path($paths[0]),
+            ExpressionDescriptor::TYPE_COUNT =>
+                ExpressionDescriptor::count(
+                    $paths,
+                    $descriptor->distinct()
+                ),
+            default => throw new \RuntimeException(sprintf(
+                'Unsupported expression descriptor type [%s].',
+                $descriptor->type()
+            )),
+        };
     }
 
     /**
@@ -1322,14 +1565,39 @@ class AutoJoinQueryBuilder extends EloquentBuilder
      */
     protected function isBaseModelColumn(string $column): bool
     {
-        $model = $this->getBaseModel();
-        if ($this->baseModelColumns === null) {
-            $this->baseModelColumns = $model
-                ->getConnection()
+        return $this->isModelColumn(
+            $this->getBaseModel(),
+            $column
+        );
+    }
+
+    /**
+     * Check whether a physical column exists on a model's table.
+     *
+     * @param  Model  $model
+     * @param  string $column
+     * @return bool
+     */
+    protected function isModelColumn(Model $model, string $column): bool
+    {
+        $connection = $model->getConnection();
+        $cacheKey = sprintf(
+            '%s:%s',
+            $connection->getName(),
+            $model->getTable()
+        );
+
+        if (! isset($this->modelColumns[$cacheKey])) {
+            $this->modelColumns[$cacheKey] = $connection
                 ->getSchemaBuilder()
                 ->getColumnListing($model->getTable());
         }
-        return in_array($column, $this->baseModelColumns ?: [], true);
+
+        return in_array(
+            $column,
+            $this->modelColumns[$cacheKey],
+            true
+        );
     }
 
     /**

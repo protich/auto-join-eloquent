@@ -22,6 +22,13 @@ use Illuminate\Database\Query\Expression;
 abstract class BaseCompiler
 {
     /**
+     * Model-described paths currently being compiled.
+     *
+     * @var list<string>
+     */
+    protected array $describedPathStack = [];
+
+    /**
      * Laravel binding group for expressions compiled by this compiler.
      *
      * @var string
@@ -130,7 +137,7 @@ abstract class BaseCompiler
      * - Aggregates (COUNT(...), SUM(...))
      * - Suffix-based aggregates (e.g., __count)
      * - COALESCE(...)
-     * - Model-defined paths (e.g., model__status)
+     * - Model-described paths (e.g., status or model__status)
      * - Basic relationship-aware columns
      *
      * @param string $column
@@ -139,10 +146,24 @@ abstract class BaseCompiler
      */
     public function compileColumn(string $column, bool $allowAlias = false): Expression
     {
-        if ($modelPath = $this->parseModelDefinedPathExpression($column)) {
+        if ($modelPath = $this->parseDescribedPathExpression($column)) {
             return $this->compileModelDefinedPath($modelPath, $allowAlias);
         }
 
+        return $this->compileStandardColumn($column, $allowAlias);
+    }
+
+    /**
+     * Compile expressions that were not described by a model.
+     *
+     * @param  string $column
+     * @param  bool   $allowAlias
+     * @return Expression
+     */
+    protected function compileStandardColumn(
+        string $column,
+        bool $allowAlias = false
+    ): Expression {
         if ($aggregate = $this->parseAggregateExpression($column)) {
             return $this->compileAggregateExpression($aggregate, $allowAlias);
         }
@@ -464,7 +485,7 @@ abstract class BaseCompiler
 
         $resolved = array_map(function ($field) use ($grammar) {
             $column = $this->parseColumnParts($field)['column'];
-            $expr = $this->builder->resolveColumnExpression($column, null, false);
+            $expr = $this->resolveColumnExpression($column, null, false);
             // @phpstan-ignore-next-line
             return $expr->getValue($grammar); // @phpstan-ignore-line
         }, $info['fields']);
@@ -487,6 +508,7 @@ abstract class BaseCompiler
      * @return array{
      *     path:string,
      *     descriptor:ExpressionDescriptor,
+     *     model:class-string<\Illuminate\Database\Eloquent\Model>,
      *     alias:?string
      * }|null
      */
@@ -503,8 +525,58 @@ abstract class BaseCompiler
         return [
             'path'       => $described['path'],
             'descriptor' => $described['descriptor'],
+            'model'      => $described['model'],
             'alias'      => $parsed['alias'] ?? null,
         ];
+    }
+
+    /**
+     * Parse an implicitly model-described path expression.
+     *
+     * @param  string $column
+     * @return array{
+     *     path:string,
+     *     descriptor:ExpressionDescriptor,
+     *     model:class-string<\Illuminate\Database\Eloquent\Model>,
+     *     alias:?string
+     * }|null
+     */
+    protected function parseImplicitModelPathExpression(
+        string $column
+    ): ?array {
+        $parsed = $this->parseColumnParts($column);
+        $described = $this->builder->describeUnresolvedPath(
+            $parsed['column']
+        );
+
+        if ($described === null) {
+            return null;
+        }
+
+        return [
+            'path'       => $described['path'],
+            'descriptor' => $described['descriptor'],
+            'model'      => $described['model'],
+            'alias'      => $parsed['alias'] ?? null,
+        ];
+    }
+
+    /**
+     * Parse either an explicit or implicitly model-described expression.
+     *
+     * @param  string $column
+     * @return array{
+     *     path:string,
+     *     descriptor:ExpressionDescriptor,
+     *     model:class-string<\Illuminate\Database\Eloquent\Model>,
+     *     alias:?string
+     * }|null
+     */
+    protected function parseDescribedPathExpression(
+        string $column
+    ): ?array {
+        return $this->parseModelDefinedPathExpression($column)
+            ?? $this->parseImplicitModelPathExpression($column);
     }
 
     /**
@@ -513,6 +585,7 @@ abstract class BaseCompiler
      * @param  array{
      *     path:string,
      *     descriptor:ExpressionDescriptor,
+     *     model:class-string<\Illuminate\Database\Eloquent\Model>,
      *     alias:?string
      * } $modelPath
      * @param  bool $allowAlias
@@ -522,26 +595,43 @@ abstract class BaseCompiler
     {
         $descriptor = $modelPath['descriptor'];
         $alias = $modelPath['alias'] ?? null;
+        $stackKey = $modelPath['model'] . '::' . $modelPath['path'];
 
-        return match ($descriptor->type()) {
-            ExpressionDescriptor::TYPE_PATH => $this->compileModelPathDescriptor(
-                $descriptor,
-                $alias,
-                $allowAlias,
-                $modelPath['path']
-            ),
-            ExpressionDescriptor::TYPE_COUNT => $this->compileModelCountDescriptor(
-                $descriptor,
-                $alias,
-                $allowAlias,
-                $modelPath['path']
-            ),
-            default => throw new \RuntimeException(sprintf(
-                'Unsupported model-defined descriptor type [%s] for path [%s].',
-                $descriptor->type(),
-                $modelPath['path']
-            )),
-        };
+        if (in_array($stackKey, $this->describedPathStack, true)) {
+            throw new \RuntimeException(sprintf(
+                'Circular model-defined auto-join path [%s] on model [%s].',
+                $modelPath['path'],
+                $modelPath['model']
+            ));
+        }
+
+        $this->describedPathStack[] = $stackKey;
+
+        try {
+            return match ($descriptor->type()) {
+                ExpressionDescriptor::TYPE_PATH =>
+                    $this->compileModelPathDescriptor(
+                        $descriptor,
+                        $alias,
+                        $allowAlias,
+                        $modelPath['path']
+                    ),
+                ExpressionDescriptor::TYPE_COUNT =>
+                    $this->compileModelCountDescriptor(
+                        $descriptor,
+                        $alias,
+                        $allowAlias,
+                        $modelPath['path']
+                    ),
+                default => throw new \RuntimeException(sprintf(
+                    'Unsupported model-defined descriptor type [%s] for path [%s].',
+                    $descriptor->type(),
+                    $modelPath['path']
+                )),
+            };
+        } finally {
+            array_pop($this->describedPathStack);
+        }
     }
 
     /**
@@ -558,7 +648,7 @@ abstract class BaseCompiler
         bool $allowAlias,
         string $sourcePath
     ): Expression {
-        return $this->builder->resolveColumnExpression(
+        return $this->resolveColumnExpression(
             $descriptor->getPath(), // @phpstan-ignore-line
             $allowAlias ? $alias : null,
             $allowAlias,
@@ -933,7 +1023,7 @@ abstract class BaseCompiler
         bool $allowAutoAliasing = true,
         ?string $relationshipPath = null
     ): Expression {
-        if ($modelPath = $this->parseModelDefinedPathExpression($column)) {
+        if ($modelPath = $this->parseDescribedPathExpression($column)) {
             if ($alias !== null && empty($modelPath['alias'])) {
                 $modelPath['alias'] = $alias;
             }

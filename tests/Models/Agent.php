@@ -22,8 +22,10 @@ use protich\AutoJoinEloquent\Model\PathRequest;
  * It also defines model-level auto-join paths used by the DSL,
  * such as:
  *
- * - model__status
- * - model__accessibleDepartments
+ * - status
+ * - accessibleDepartments
+ *
+ * The optional `model__` marker remains supported for explicit delegation.
  */
 class Agent extends BaseModel
 {
@@ -58,15 +60,17 @@ class Agent extends BaseModel
      * The auto-joiner removes its marker before delegating the complete path.
      *
      * @param  PathRequest  $request
-     * @return ExpressionDescriptor
-     *
-     * @throws \RuntimeException If the test path is unsupported.
+     * @return ExpressionDescriptor|null
      */
     public static function describeAutoJoinPath(
         PathRequest $request
-    ): ExpressionDescriptor {
+    ): ?ExpressionDescriptor {
         return match ($request->path) {
             'status' => ExpressionDescriptor::path('flags'),
+            'statusAlias' => ExpressionDescriptor::path('status'),
+            'circularExpression' => ExpressionDescriptor::path(
+                'circularExpression'
+            ),
             'userNamed__Alice',
             'userNamed__Bob' => ExpressionDescriptor::path(
                 'userByName.name'
@@ -95,10 +99,7 @@ class Agent extends BaseModel
                 ],
                 distinct: true
             ),
-            default => throw new \RuntimeException(sprintf(
-                'Unsupported test model path [%s].',
-                $request->path
-            )),
+            default => parent::describeAutoJoinPath($request),
         };
     }
 
