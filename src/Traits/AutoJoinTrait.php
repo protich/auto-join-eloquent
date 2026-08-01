@@ -20,7 +20,9 @@ trait AutoJoinTrait
      * @param  \Illuminate\Database\Query\Builder $query
      * @return AutoJoinQueryBuilder
      */
-    public function newEloquentBuilder($query): AutoJoinQueryBuilder
+    public function newEloquentBuilder(
+        $query
+    ): AutoJoinQueryBuilder
     {
         return $this->newAutoJoinBuilder($query);
     }

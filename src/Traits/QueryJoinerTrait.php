@@ -2,7 +2,8 @@
 
 namespace protich\AutoJoinEloquent\Traits;
 
-use Illuminate\Database\Query\Builder;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Trait: QueryJoinerTrait
@@ -18,18 +19,23 @@ trait QueryJoinerTrait
     /**
      * Scope a query to manually trigger auto join logic.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder $query
-     * @param  string                                $joinType
-     * @return \Illuminate\Database\Eloquent\Builder
+     * @template TModel of Model
+     * @param  Builder<TModel> $query
+     * @param  string          $joinType
+     * @return Builder<TModel>
      */
-    public function scopeWithAutoJoins($query, string $joinType = 'left')
-    {
+    public function scopeWithAutoJoins(
+        Builder $query,
+        string $joinType = 'left'
+    ): Builder {
         $model = $query->getModel();
 
-        $builder = $model->newAutoJoinBuilder($query->getQuery(), $joinType);
+        $builder = $this->newAutoJoinBuilder(
+            $query->getQuery(),
+            $joinType
+        );
         $builder->setBaseModel($model);
 
         return $query;
     }
-
 }

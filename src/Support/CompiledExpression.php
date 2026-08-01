@@ -2,7 +2,8 @@
 
 namespace protich\AutoJoinEloquent\Support;
 
-use Illuminate\Database\Query\Expression;
+use Illuminate\Contracts\Database\Query\Expression;
+use Illuminate\Database\Grammar;
 
 /**
  * Class: CompiledExpression
@@ -13,8 +14,13 @@ use Illuminate\Database\Query\Expression;
  * Expression instances, which may still need to pass through the
  * auto-join compiler pipeline.
  */
-class CompiledExpression extends Expression
+class CompiledExpression implements Expression
 {
+    /**
+     * Compiler-generated SQL.
+     */
+    private string $compiledValue;
+
     /**
      * Create a new compiled expression.
      *
@@ -23,6 +29,17 @@ class CompiledExpression extends Expression
      */
     public function __construct(string $value)
     {
-        parent::__construct($value);
+        $this->compiledValue = $value;
+    }
+
+    /**
+     * Get the compiler-generated SQL.
+     *
+     * @param  Grammar $grammar
+     * @return string
+     */
+    public function getValue(Grammar $grammar): string
+    {
+        return $this->compiledValue;
     }
 }

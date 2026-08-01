@@ -2,7 +2,7 @@
 
 namespace protich\AutoJoinEloquent\Compilers;
 
-use Illuminate\Database\Query\Expression;
+use protich\AutoJoinEloquent\Support\CompiledExpression;
 
 /**
  * SelectCompiler
@@ -20,9 +20,12 @@ class SelectCompiler extends BaseCompiler
      *
      * @param  string $column
      * @param  bool   $allowAlias Required for compatibility; ignored here.
-     * @return Expression
+     * @return CompiledExpression
      */
-    public function compileColumn(string $column, bool $allowAlias = false): Expression
+    public function compileColumn(
+        string $column,
+        bool $allowAlias = false
+    ): CompiledExpression
     {
         $expression = parent::compileColumn($column, true);
 
@@ -35,17 +38,20 @@ class SelectCompiler extends BaseCompiler
      * Register a compiled select expression for later alias reuse.
      *
      * @param  string      $column
-     * @param  Expression  $expression
+     * @param  CompiledExpression $expression
      * @return void
      */
-    protected function registerSelection(string $column, Expression $expression): void
+    protected function registerSelection(
+        string $column,
+        CompiledExpression $expression
+    ): void
     {
         $parsed = $this->parseColumnParts($column);
         $key    = $parsed['column'];
         $alias  = $parsed['alias'];
 
         if ($alias === null) {
-            $sql = $expression->getValue($this->builder->getGrammar()); // @phpstan-ignore-line
+            $sql = $expression->getValue($this->builder->getGrammar());
             $alias = $this->builder->parseAlias($sql);
         }
 

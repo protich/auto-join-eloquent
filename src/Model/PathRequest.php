@@ -7,38 +7,36 @@ use InvalidArgumentException;
 /**
  * Class: PathRequest
  *
- * The complete model-defined path submitted to a model hook.
+ * The complete unresolved path remainder submitted to a model hook.
  *
- * The path is deliberately kept intact so the auto-joiner does not interpret
- * application-defined segments. Models receive the reserved `model__` marker
- * and decide how the complete expression should be described.
+ * Normal relationship hops are resolved before the request is constructed.
+ * The remaining model-owned expression is kept intact so the package does not
+ * impose application-specific segmentation rules.
  */
 final readonly class PathRequest
 {
     /**
-     * Complete model-defined path, including the `model__` marker.
+     * Complete model-local remainder without the auto-join marker.
      *
      * @var non-empty-string
      */
     public string $path;
 
     /**
-     * Create a request for a complete model-defined path.
+     * Create a request for a complete unresolved path remainder.
      *
      * @param  string  $path
      *
-     * @throws InvalidArgumentException If the path does not contain a name
-     *                                  after the `model__` marker.
+     * @throws InvalidArgumentException If the path is empty.
      */
     public function __construct(string $path)
     {
         $path = trim($path);
 
-        if (! str_starts_with($path, 'model__') || $path === 'model__') {
-            throw new InvalidArgumentException(sprintf(
-                'Auto-join model path [%s] must begin with [model__].',
-                $path
-            ));
+        if ($path === '') {
+            throw new InvalidArgumentException(
+                'Auto-join model path must not be empty.'
+            );
         }
 
         $this->path = $path;

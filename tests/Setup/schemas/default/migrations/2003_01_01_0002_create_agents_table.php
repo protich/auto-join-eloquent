@@ -10,7 +10,7 @@ class CreateAgentsTable extends Migration
      * Create agents table.
      *
      * Includes flags column used for model-defined status paths
-     * (e.g. model__status → flags).
+     * (e.g. status → flags).
      *
      * @return void
      */

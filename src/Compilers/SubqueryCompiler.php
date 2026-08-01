@@ -3,10 +3,10 @@
 namespace protich\AutoJoinEloquent\Compilers;
 
 use protich\AutoJoinEloquent\AutoJoinQueryBuilder;
-use protich\AutoJoinEloquent\Compilers\SubqueryQueryCompiler;
 use protich\AutoJoinEloquent\Support\SubQueryExpression;
 use protich\AutoJoinEloquent\Support\CompiledExpression;
-use Illuminate\Database\Query\Expression;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use RuntimeException;
 
 /**
@@ -54,9 +54,8 @@ class SubqueryCompiler extends BaseCompiler
     {
         $model  = $this->outerBuilder->getBaseModel();
         $prefix = $this->outerBuilder->nextSubqueryPrefix();
-        $query  = $model->newQuery()->getQuery();
-
-        $builder = $model->newAutoJoinBuilder($query);
+        $query = $model->getConnection()->query();
+        $builder = new AutoJoinQueryBuilder($query);
 
         $builder->setModel($model);
         $builder->setBaseModel($model);
@@ -112,11 +111,14 @@ class SubqueryCompiler extends BaseCompiler
      * and correlates the inner query to the current outer row using the
      * base model key.
      *
-     * @param  string $path
+     * @param  string      $path
+     * @param  string|null $relationshipPath
      * @return \Illuminate\Database\Query\Builder
      */
-    protected function buildPathSelectSubquery(string $path)
-    {
+    protected function buildPathSelectSubquery(
+        string $path,
+        ?string $relationshipPath = null
+    ) {
         $path = trim($path);
 
         if ($path === '') {
@@ -131,15 +133,26 @@ class SubqueryCompiler extends BaseCompiler
         $innerAlias = $builder->getBaseAlias();
         $innerKey   = $builder->getBaseModel()->getKeyName();
 
-        $builder->select($path);
+        $column = $this->normalizeColumn($path);
+        $resolved = $builder->resolveColumnExpression(
+            $column,
+            null,
+            false,
+            $relationshipPath
+        );
+        $resolvedSql = $resolved->getValue($grammar);
 
-        $builder->whereRaw(sprintf(
+        $builder->select(
+            new CompiledExpression($resolvedSql)
+        );
+
+        $builder->whereRaw(new CompiledExpression(sprintf(
             '%s.%s = %s.%s',
             $grammar->wrap($innerAlias),
             $grammar->wrap($innerKey),
             $grammar->wrap($this->getOuterAlias()),
             $grammar->wrap($this->getOuterKeyName())
-        ));
+        )));
 
         $query = $builder->getQuery();
 
@@ -157,12 +170,18 @@ class SubqueryCompiler extends BaseCompiler
      * The returned expression is wrapped and intended for use anywhere a
      * final subquery expression is required.
      *
-     * @param  string $path
+     * @param  string      $path
+     * @param  string|null $relationshipPath
      * @return SubQueryExpression
      */
-    public function compilePathSelectSubquery(string $path): SubQueryExpression
-    {
-        $subquery = $this->compilePathSelectSubquerySqlExpression($path);
+    public function compilePathSelectSubquery(
+        string $path,
+        ?string $relationshipPath = null
+    ): SubQueryExpression {
+        $subquery = $this->compilePathSelectSubquerySqlExpression(
+            $path,
+            $relationshipPath
+        );
 
         return new SubQueryExpression(sprintf(
             '(%s)',
@@ -176,25 +195,36 @@ class SubqueryCompiler extends BaseCompiler
      * The returned SQL is not wrapped in outer parentheses and is intended
      * for use in UNION composition.
      *
-     * @param  string $path
+     * @param  string      $path
+     * @param  string|null $relationshipPath
      * @return string
      */
-    public function compilePathSelectSubquerySql(string $path): string
-    {
-        return $this->compilePathSelectSubquerySqlExpression($path)
+    public function compilePathSelectSubquerySql(
+        string $path,
+        ?string $relationshipPath = null
+    ): string {
+        return $this->compilePathSelectSubquerySqlExpression(
+            $path,
+            $relationshipPath
+        )
             ->sql();
     }
 
     /**
      * Compile raw subquery SQL together with its ordered bindings.
      *
-     * @param  string  $path
+     * @param  string      $path
+     * @param  string|null $relationshipPath
      * @return SubQueryExpression
      */
     public function compilePathSelectSubquerySqlExpression(
-        string $path
+        string $path,
+        ?string $relationshipPath = null
     ): SubQueryExpression {
-        $query = $this->buildPathSelectSubquery($path);
+        $query = $this->buildPathSelectSubquery(
+            $path,
+            $relationshipPath
+        );
 
         return new SubQueryExpression(
             $query->toSql(),
@@ -222,24 +252,31 @@ class SubqueryCompiler extends BaseCompiler
      *   )
      *
      * @param  array<int,string> $paths
+     * @param  string|null       $relationshipPath
      * @return string
      */
-    public function compileExistsCountSubquerySql(array $paths): string
-    {
-        return $this->compileExistsCountSubquery($paths)
+    public function compileExistsCountSubquerySql(
+        array $paths,
+        ?string $relationshipPath = null
+    ): string {
+        return $this->compileExistsCountSubquery(
+            $paths,
+            $relationshipPath
+        )
             ->sql();
     }
 
     /**
      * Compile a binding-aware target-anchored EXISTS count subquery.
      *
-     * @param  array<int,string>  $paths
+     * @param  array<int,string> $paths
+     * @param  string|null       $relationshipPath
      * @return SubQueryExpression
      */
     public function compileExistsCountSubquery(
-        array $paths
-    ): SubQueryExpression
-    {
+        array $paths,
+        ?string $relationshipPath = null
+    ): SubQueryExpression {
         if ($paths === []) {
             throw new RuntimeException(
                 'EXISTS count subquery requires at least one path.'
@@ -255,7 +292,8 @@ class SubqueryCompiler extends BaseCompiler
             fn (string $path) => $this->compilePathExistsPredicateSql(
                 $path,
                 $alias,
-                $target['field']
+                $target['field'],
+                $relationshipPath
             ),
             $paths
         );
@@ -297,15 +335,17 @@ class SubqueryCompiler extends BaseCompiler
      *       and terminal_value = target_alias.target_field
      *   )
      *
-     * @param  string $path
-     * @param  string $targetAlias
-     * @param  string $targetField
+     * @param  string      $path
+     * @param  string      $targetAlias
+     * @param  string      $targetField
+     * @param  string|null $relationshipPath
      * @return SubQueryExpression
      */
     protected function compilePathExistsPredicateSql(
         string $path,
         string $targetAlias,
-        string $targetField
+        string $targetField,
+        ?string $relationshipPath = null
     ): SubQueryExpression {
         $path = trim($path);
 
@@ -319,30 +359,33 @@ class SubqueryCompiler extends BaseCompiler
         $grammar = $builder->getGrammar();
 
         $column = $this->normalizeColumn($path);
-        $resolved = $builder->resolveColumnExpression($column, null, false);
-        $terminal = $resolved instanceof Expression
-            ? $resolved->getValue($grammar) // @phpstan-ignore-line
-            : (string) $resolved;
+        $resolved = $builder->resolveColumnExpression(
+            $column,
+            null,
+            false,
+            $relationshipPath
+        );
+        $terminal = $resolved->getValue($grammar);
 
         $innerAlias = $builder->getBaseAlias();
         $innerKey   = $builder->getBaseModel()->getKeyName();
 
         $builder->select(new CompiledExpression('1'));
 
-        $builder->whereRaw(sprintf(
+        $builder->whereRaw(new CompiledExpression(sprintf(
             '%s.%s = %s.%s',
             $grammar->wrap($innerAlias),
             $grammar->wrap($innerKey),
             $grammar->wrap($this->getOuterAlias()),
             $grammar->wrap($this->getOuterKeyName())
-        ));
+        )));
 
-        $builder->whereRaw(sprintf(
+        $builder->whereRaw(new CompiledExpression(sprintf(
             '%s = %s.%s',
             $terminal,
             $grammar->wrap($targetAlias),
             $grammar->wrap($targetField)
-        ));
+        )));
 
         $query = $builder->getQuery();
 
@@ -365,15 +408,25 @@ class SubqueryCompiler extends BaseCompiler
      * of the final relation.
      *
      * @param  array<int, array{relation: string, join: string}> $chain
-     * @return \Illuminate\Database\Eloquent\Model
+     * @return Model
      */
-    protected function resolveExistsCountTargetModel(array $chain)
+    protected function resolveExistsCountTargetModel(array $chain): Model
     {
         $model = $this->outerBuilder->getBaseModel();
 
         foreach ($chain as $step) {
             $relation = $step['relation'];
-            $rel      = $model->{$relation}();
+            $rel = Relation::noConstraints(
+                fn () => $model->{$relation}()
+            );
+
+            if (! $rel instanceof Relation) {
+                throw new RuntimeException(sprintf(
+                    'Method [%s] on model [%s] did not return an Eloquent relationship.',
+                    $relation,
+                    $model::class
+                ));
+            }
 
             $model = $rel->getRelated();
         }
@@ -427,6 +480,15 @@ class SubqueryCompiler extends BaseCompiler
                     $path
                 ));
             }
+        }
+
+        if (
+            $targetRelation === null
+            || $targetChain === null
+        ) {
+            throw new RuntimeException(
+                'EXISTS count paths must not be empty.'
+            );
         }
 
         return [

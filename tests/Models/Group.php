@@ -3,6 +3,7 @@
 namespace protich\AutoJoinEloquent\Tests\Models;
 
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use protich\AutoJoinEloquent\Model\AutoJoinRelation;
 use protich\AutoJoinEloquent\Tests\Models\Department;
@@ -40,9 +41,9 @@ class Group extends BaseModel
     /**
      * Get the parent group.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return BelongsTo<Group,$this>
      */
-    public function parent()
+    public function parent(): BelongsTo
     {
         return $this->belongsTo(Group::class, 'parent_id');
     }
@@ -50,9 +51,9 @@ class Group extends BaseModel
     /**
      * Get the child groups.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     * @return HasMany<Group,$this>
      */
-    public function children()
+    public function children(): HasMany
     {
         return $this->hasMany(Group::class, 'parent_id');
     }
@@ -93,9 +94,14 @@ class Group extends BaseModel
     /**
      * Get the agents assigned to this group.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     * @return BelongsToMany<
+     *     Agent,
+     *     $this,
+     *     \Illuminate\Database\Eloquent\Relations\Pivot,
+     *     'pivot'
+     * >
      */
-    public function agents()
+    public function agents(): BelongsToMany
     {
         return $this->belongsToMany(
             Agent::class,
@@ -108,9 +114,14 @@ class Group extends BaseModel
     /**
      * Get the departments assigned to this group.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     * @return BelongsToMany<
+     *     Department,
+     *     $this,
+     *     \Illuminate\Database\Eloquent\Relations\Pivot,
+     *     'pivot'
+     * >
      */
-    public function departments()
+    public function departments(): BelongsToMany
     {
         return $this->belongsToMany(
             Department::class,
@@ -127,11 +138,14 @@ class Group extends BaseModel
      */
     public function qualifiedDepartments(): BelongsToMany
     {
-        return $this->belongsToMany(
+        $relation = $this->belongsToMany(
             Department::class,
             'group_departments',
             'group_id',
             'department_id'
-        )->where('departments.name', 'Support');
+        );
+        $relation->where('departments.name', 'Support');
+
+        return $relation;
     }
 }

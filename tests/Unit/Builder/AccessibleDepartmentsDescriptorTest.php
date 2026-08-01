@@ -31,7 +31,7 @@ class AccessibleDepartmentsDescriptorTest extends AutoJoinTestCase
         );
 
         $this->assertSame(
-            'model__accessibleDepartments__id__count',
+            'accessibleDepartments__id__count',
             $described['path']
         );
         $this->assertInstanceOf(

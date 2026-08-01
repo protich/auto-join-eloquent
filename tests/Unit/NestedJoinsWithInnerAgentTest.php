@@ -42,7 +42,7 @@ class NestedJoinsWithInnerAgentTest extends AutoJoinTestCase
 
         // Verify that the returned record contains the expected fields.
         $result = $query->first();
-        $this->assertNotEmpty($result, 'A record should be returned from the query.');
+        $this->assertNotNull($result, 'A record should be returned from the query.');
         $this->assertNotNull($result->agent_id, 'Agent id should be present from the inner join.');
         $this->assertNotNull($result->dept_name, 'Department name should be present from the nested join.');
         $this->assertNotNull($result->mgr_name, 'Manager name should be present from the nested join.');

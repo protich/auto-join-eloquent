@@ -246,7 +246,9 @@ class ComplexRelationshipTest extends AutoJoinTestCase
 
         $this->assertCount($agentCount, $leftRows);
         $this->assertCount(1, $innerRows);
-        $this->assertSame('Alice', $innerRows->first()->matched_name);
+        $innerRow = $innerRows->first();
+        $this->assertNotNull($innerRow);
+        $this->assertSame('Alice', $innerRow->matched_name);
         $this->assertSame(
             $agentCount - 1,
             $leftRows->whereNull('matched_name')->count()

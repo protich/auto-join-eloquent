@@ -2,6 +2,7 @@
 
 namespace protich\AutoJoinEloquent\Compilers;
 
+use Illuminate\Contracts\Database\Query\Expression as ExpressionContract;
 use Illuminate\Database\Query\Builder;
 use protich\AutoJoinEloquent\AutoJoinQueryBuilder;
 
@@ -11,6 +12,8 @@ use protich\AutoJoinEloquent\AutoJoinQueryBuilder;
  * Transforms query clauses (SELECT, WHERE, HAVING, GROUP BY, ORDER BY) using their
  * respective compiler classes. Each compiler implements BaseCompiler::compileClause().
  * This class normalizes clause input and applies auto-join and expression resolution.
+ *
+ * @phpstan-consistent-constructor
  */
 class QueryCompiler
 {
@@ -57,10 +60,17 @@ class QueryCompiler
             $compiler = new $compilerClass($this->builder);
             $compiled = $compiler->compileClause($clauses);
 
-            $query->{$clauseKey} = $this->normalizeCompiledClause(
+            $normalized = $this->normalizeCompiledClause(
                 $clauseKey,
                 $compiled
             );
+
+            if ($clauseKey === 'columns') {
+                $query->columns = $this->normalizeColumns($normalized);
+                continue;
+            }
+
+            $query->{$clauseKey} = $normalized;
         }
 
         return $query;
@@ -76,6 +86,33 @@ class QueryCompiler
     protected function normalizeCompiledClause(string $clauseKey, array $clauses): array
     {
         return $clauses;
+    }
+
+    /**
+     * Validate compiled SELECT entries for Laravel's query builder.
+     *
+     * @param  array<int|string,mixed> $columns
+     * @return array<ExpressionContract|string>
+     */
+    protected function normalizeColumns(array $columns): array
+    {
+        $normalized = [];
+
+        foreach ($columns as $key => $column) {
+            if (
+                ! is_string($column)
+                && ! $column instanceof ExpressionContract
+            ) {
+                throw new \LogicException(sprintf(
+                    'Compiled SELECT clauses must be strings or query expressions; [%s] given.',
+                    get_debug_type($column)
+                ));
+            }
+
+            $normalized[$key] = $column;
+        }
+
+        return $normalized;
     }
 
     /**

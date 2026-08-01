@@ -1,5 +1,58 @@
 # Upgrading Auto Join Eloquent
 
+## From 0.10 to 0.11
+
+Version 0.11 resolves normal columns and relationships before asking the model
+at the first unresolved hop to describe the remaining path. Update the package
+constraint in consuming applications:
+
+```json
+{
+  "require": {
+    "protich/auto-join-eloquent": "^0.11.0"
+  }
+}
+```
+
+### Return null for expressions the model does not own
+
+The model hook is now nullable. Replace exceptions used only to decline an
+unknown expression with `null`:
+
+```php
+public static function describeAutoJoinPath(
+    PathRequest $request
+): ?ExpressionDescriptor {
+    return match ($request->path) {
+        'status' => ExpressionDescriptor::path('flags'),
+        default => null,
+    };
+}
+```
+
+Validation failures for expressions the model does recognize should still
+throw an exception.
+
+### Describe only the unresolved local remainder
+
+Normal relationships no longer need to be repeated inside a base model's
+descriptor. Given:
+
+```text
+organization__cdata__field_id__42
+```
+
+the package traverses `organization` and `cdata`, then calls the CData model
+with `PathRequest('field_id__42')`. Its descriptor is relative to that model:
+
+```php
+return ExpressionDescriptor::path('values.field_value');
+```
+
+The package rebases the returned path onto the relationships already resolved.
+The `model__` prefix remains supported for compatibility and explicit
+delegation.
+
 ## From 0.9 to 0.10
 
 Version 0.10 targets PHP 8.3 and Illuminate Database 13. Update the package
@@ -35,7 +88,7 @@ public static function describeAutoJoinPath(
     PathRequest $request
 ): ExpressionDescriptor {
     return match ($request->path) {
-        'model__status' => ExpressionDescriptor::path('flags'),
+        'status' => ExpressionDescriptor::path('flags'),
         default => throw new \RuntimeException(sprintf(
             'Unsupported auto-join path [%s].',
             $request->path

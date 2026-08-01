@@ -22,8 +22,10 @@ use protich\AutoJoinEloquent\Model\PathRequest;
  * It also defines model-level auto-join paths used by the DSL,
  * such as:
  *
- * - model__status
- * - model__accessibleDepartments
+ * - status
+ * - accessibleDepartments
+ *
+ * The optional `model__` marker remains supported for explicit delegation.
  */
 class Agent extends BaseModel
 {
@@ -33,6 +35,16 @@ class Agent extends BaseModel
      * @var list<array{name:string,path:string}>
      */
     public static array $autoJoinRelationDescriptions = [];
+
+    /**
+     * Get calls made to the complex relationship description hook.
+     *
+     * @return list<array{name:string,path:string}>
+     */
+    public static function autoJoinRelationDescriptions(): array
+    {
+        return self::$autoJoinRelationDescriptions;
+    }
 
     /**
      * Table name.
@@ -55,44 +67,49 @@ class Agent extends BaseModel
     /**
      * Describe a model-defined auto-join path.
      *
-     * This acts as the entry point for resolving `model__*` paths
-     * into descriptor definitions understood by the auto-join compiler.
+     * The auto-joiner removes its marker before delegating the complete path.
      *
      * @param  PathRequest  $request
-     * @return ExpressionDescriptor
-     *
-     * @throws \RuntimeException If the test path is unsupported.
+     * @return ExpressionDescriptor|null
      */
     public static function describeAutoJoinPath(
         PathRequest $request
-    ): ExpressionDescriptor {
+    ): ?ExpressionDescriptor {
         return match ($request->path) {
-            'model__status' => ExpressionDescriptor::path('flags'),
-            'model__accessibleDepartments__id__count' => ExpressionDescriptor::count(
+            'status' => ExpressionDescriptor::path('flags'),
+            'statusAlias' => ExpressionDescriptor::path('status'),
+            'circularExpression' => ExpressionDescriptor::path(
+                'circularExpression'
+            ),
+            'userNamed__Alice',
+            'userNamed__Bob' => ExpressionDescriptor::path(
+                'userByName.name'
+            ),
+            'userNamed__Alice__count' => ExpressionDescriptor::count(
+                'userByName.id'
+            ),
+            'accessibleDepartments__id__count' => ExpressionDescriptor::count(
                 [
                     'departments.id',
                     'groups.departments.id',
                 ],
                 distinct: true
             ),
-            'model__qualifiedDepartmentCount' => ExpressionDescriptor::count(
+            'qualifiedDepartmentCount' => ExpressionDescriptor::count(
                 [
                     'qualifiedDepartments.id',
                     'groups.qualifiedDepartments.id',
                 ],
                 distinct: true
             ),
-            'model__mixedComplexCount' => ExpressionDescriptor::count(
+            'mixedComplexCount' => ExpressionDescriptor::count(
                 [
                     'assignedDepartments.id',
                     'departments.id',
                 ],
                 distinct: true
             ),
-            default => throw new \RuntimeException(sprintf(
-                'Unsupported test model path [%s].',
-                $request->path
-            )),
+            default => parent::describeAutoJoinPath($request),
         };
     }
 
@@ -131,8 +148,25 @@ class Agent extends BaseModel
                 ->wherePivotNull('assigned_at'),
             'qualifiedDepartments' => $description
                 ->whereRelated('name', 'Support'),
+            'userByName' => str_starts_with(
+                $path,
+                'userNamed__'
+            ) ? $description->whereRelated(
+                'name',
+                explode('__', $path)[1] ?? ''
+            ) : $description,
             default => $description,
         };
+    }
+
+    /**
+     * Get the agent's user for a model-defined name constraint.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function userByName(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
     }
 
     /**
@@ -181,8 +215,10 @@ class Agent extends BaseModel
      */
     public function userWithoutPhone(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'user_id')
-            ->whereNull('users.phone');
+        $relation = $this->belongsTo(User::class, 'user_id');
+        $relation->whereNull('users.phone');
+
+        return $relation;
     }
 
     /**
@@ -192,8 +228,10 @@ class Agent extends BaseModel
      */
     public function userWithPhone(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'user_id')
-            ->whereNotNull('users.phone');
+        $relation = $this->belongsTo(User::class, 'user_id');
+        $relation->whereNotNull('users.phone');
+
+        return $relation;
     }
 
     /**
@@ -203,8 +241,10 @@ class Agent extends BaseModel
      */
     public function invalidPivotUser(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'user_id')
-            ->where('users.name', 'Alice');
+        $relation = $this->belongsTo(User::class, 'user_id');
+        $relation->where('users.name', 'Alice');
+
+        return $relation;
     }
 
     /**
@@ -261,20 +301,23 @@ class Agent extends BaseModel
      */
     public function qualifiedDepartments(): BelongsToMany
     {
-        return $this->belongsToMany(
+        $relation = $this->belongsToMany(
             Department::class,
             'agent_department',
             'agent_id',
             'department_id'
-        )->where('departments.name', 'Support');
+        );
+        $relation->where('departments.name', 'Support');
+
+        return $relation;
     }
 
     /**
      * An agent belongs to a user.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return BelongsTo<User,$this>
      */
-    public function user()
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
@@ -282,9 +325,14 @@ class Agent extends BaseModel
     /**
      * Direct departments the agent belongs to.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     * @return BelongsToMany<
+     *     Department,
+     *     $this,
+     *     \Illuminate\Database\Eloquent\Relations\Pivot,
+     *     'pivot'
+     * >
      */
-    public function departments()
+    public function departments(): BelongsToMany
     {
         return $this->belongsToMany(
             Department::class,
@@ -299,9 +347,14 @@ class Agent extends BaseModel
      *
      * These provide indirect department access.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     * @return BelongsToMany<
+     *     Group,
+     *     $this,
+     *     \Illuminate\Database\Eloquent\Relations\Pivot,
+     *     'pivot'
+     * >
      */
-    public function groups()
+    public function groups(): BelongsToMany
     {
         return $this->belongsToMany(
             Group::class,

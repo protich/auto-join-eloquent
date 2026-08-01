@@ -56,13 +56,27 @@ class Seeder
             throw new Exception("Schema file not found at: {$schemaFile}");
         }
 
-        /** @var array<string, array<string>> $schemaData */
         $schemaData = require $schemaFile;
-        if (!isset($schemaData['tables']) || !is_array($schemaData['tables'])) { // @phpstan-ignore-line
+
+        if (! is_array($schemaData)) {
+            throw new Exception('Schema file must return an array.');
+        }
+
+        $tables = $schemaData['tables'] ?? null;
+
+        if (! is_array($tables)) {
             throw new Exception("No 'tables' key found in schema file.");
         }
 
-        $this->tables = $schemaData['tables'];
+        foreach ($tables as $table) {
+            if (! is_string($table)) {
+                throw new Exception(
+                    "Schema 'tables' entries must be strings."
+                );
+            }
+        }
+
+        $this->tables = array_values($tables);
         $this->schemaFactory = $schemaData['factory'] ?? null;
     }
 
@@ -179,6 +193,14 @@ class Seeder
         if (!file_exists($file)) {
             throw new Exception("Seeder file not found: {$file}");
         }
-        return require $file; // @phpstan-ignore-line
+        $records = require $file;
+
+        if (! is_array($records)) {
+            throw new Exception(
+                "Seeder file must return an array: {$file}"
+            );
+        }
+
+        return $records;
     }
 }

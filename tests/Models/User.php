@@ -4,6 +4,7 @@ namespace protich\AutoJoinEloquent\Tests\Models;
 
 use protich\AutoJoinEloquent\Tests\Traits\AutoJoinTestTrait;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class User extends Model
 {
@@ -15,9 +16,9 @@ class User extends Model
 
     /**
      * A user is associated with an agent.
-     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     * @return HasOne<Agent,$this>
      */
-    public function agent()
+    public function agent(): HasOne
     {
         return $this->hasOne(Agent::class);
     }

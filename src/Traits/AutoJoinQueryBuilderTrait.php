@@ -3,6 +3,7 @@
 namespace protich\AutoJoinEloquent\Traits;
 
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use protich\AutoJoinEloquent\AutoJoinQueryBuilder;
 use protich\AutoJoinEloquent\Model\AutoJoinRelation;
 use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
@@ -19,25 +20,20 @@ use Throwable;
 trait AutoJoinQueryBuilderTrait
 {
     /**
-     * Describe a complete path carrying the reserved `model__` marker.
+     * Describe a complete unresolved application-defined path.
      *
      * Models override this hook only when they expose model-defined paths. The
-     * request contains the complete expression so the package does not impose
-     * application-specific segmentation rules.
+     * request contains the intact model-local remainder without the reserved
+     * marker. Returning null declines the expression and preserves normal
+     * compiler behavior.
      *
      * @param  PathRequest  $request
-     * @return ExpressionDescriptor
-     *
-     * @throws RuntimeException When the model does not support the path.
+     * @return ExpressionDescriptor|null
      */
     public static function describeAutoJoinPath(
         PathRequest $request
-    ): ExpressionDescriptor {
-        throw new RuntimeException(sprintf(
-            'Model [%s] does not support auto-join path [%s].',
-            static::class,
-            $request->path
-        ));
+    ): ?ExpressionDescriptor {
+        return null;
     }
 
     /**
@@ -50,7 +46,8 @@ trait AutoJoinQueryBuilderTrait
      * implementation.
      *
      * @param  string  $name Relationship method name.
-     * @param  string  $path Complete normalized path that triggered the join.
+     * @param  string  $path Expression path that triggered the join. Model-
+     *                      defined paths do not include the reserved marker.
      * @return AutoJoinRelation Authoritative relationship description.
      *
      * @throws RuntimeException When the relationship cannot be resolved or
@@ -112,7 +109,7 @@ trait AutoJoinQueryBuilderTrait
      * @return AutoJoinQueryBuilder
      */
     protected function newAutoJoinQueryBuilder(
-        $query,
+        QueryBuilder $query,
         string $joinType = 'left'
     ): AutoJoinQueryBuilder {
         $builder = new AutoJoinQueryBuilder($query);
@@ -141,12 +138,12 @@ trait AutoJoinQueryBuilderTrait
      * @return AutoJoinQueryBuilder
      */
     public function newAutoJoinBuilder(
-        $query,
+        QueryBuilder $query,
         string $joinType = 'left'
     ): AutoJoinQueryBuilder {
         $builder = $this->newAutoJoinQueryBuilder($query, $joinType);
 
-        $query->beforeQuery(function ($query) use ($builder) {
+        $query->beforeQuery(function (QueryBuilder $query) use ($builder) {
             $builder->autoJoinQuery($query);
         });
 

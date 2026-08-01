@@ -28,8 +28,7 @@ trait AutoJoinTestTrait
      */
     public static function seed(array $data = []): void
     {
-        /** @phpstan-ignore-next-line */
-        $table = (new static)->getTable();
+        $table = static::query()->getModel()->getTable();
         Seeder::seedTable($table, $data);
     }
 }

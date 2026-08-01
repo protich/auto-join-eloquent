@@ -58,7 +58,7 @@ class NestedDotNotationWhereWithBindingsTest extends AutoJoinTestCase
         $result = $query->first();
 
         // Verify that the returned record contains the expected fields.
-        $this->assertNotEmpty($result, 'A record should be returned from the query.');
+        $this->assertNotNull($result, 'A record should be returned from the query.');
         $this->assertNotNull($result->agent_id, 'Agent id should be present from the nested join.');
         $this->assertNotNull($result->dept_name, 'Department name should be present from the nested join.');
     }

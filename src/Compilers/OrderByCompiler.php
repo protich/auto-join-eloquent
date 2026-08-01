@@ -2,7 +2,7 @@
 
 namespace protich\AutoJoinEloquent\Compilers;
 
-use Illuminate\Database\Query\Expression;
+use protich\AutoJoinEloquent\Support\CompiledExpression;
 
 /**
  * OrderByCompiler
@@ -25,9 +25,12 @@ class OrderByCompiler extends BaseCompiler
      *
      * @param  string $column
      * @param  bool   $allowAlias Required for compatibility; ignored here.
-     * @return Expression
+     * @return CompiledExpression
      */
-    public function compileColumn(string $column, bool $allowAlias = false): Expression
+    public function compileColumn(
+        string $column,
+        bool $allowAlias = false
+    ): CompiledExpression
     {
         $alias = $this->resolveSelectionAlias($column);
 
