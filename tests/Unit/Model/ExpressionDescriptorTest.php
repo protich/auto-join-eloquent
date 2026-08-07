@@ -67,6 +67,87 @@ class ExpressionDescriptorTest extends TestCase
     }
 
     /**
+     * Ensure every scalar aggregate has a typed factory and SQL function.
+     *
+     * @return void
+     */
+    public function test_scalar_aggregate_factories_are_complete(): void
+    {
+        $descriptors = [
+            ExpressionDescriptor::sum(' departments.id ', true),
+            ExpressionDescriptor::avg('departments.id'),
+            ExpressionDescriptor::min('departments.id'),
+            ExpressionDescriptor::max('departments.id'),
+        ];
+
+        $this->assertSame(
+            [
+                ExpressionDescriptor::TYPE_SUM,
+                ExpressionDescriptor::TYPE_AVG,
+                ExpressionDescriptor::TYPE_MIN,
+                ExpressionDescriptor::TYPE_MAX,
+            ],
+            array_map(
+                static fn (ExpressionDescriptor $descriptor): string =>
+                    $descriptor->type(),
+                $descriptors
+            )
+        );
+        $this->assertSame(
+            ['SUM', 'AVG', 'MIN', 'MAX'],
+            array_map(
+                static fn (ExpressionDescriptor $descriptor): ?string =>
+                    $descriptor->aggregateFunction(),
+                $descriptors
+            )
+        );
+        $this->assertSame(['departments.id'], $descriptors[0]->paths());
+        $this->assertTrue($descriptors[0]->distinct());
+    }
+
+    /**
+     * Ensure COALESCE preserves ordered path fallback semantics.
+     *
+     * @return void
+     */
+    public function test_coalesce_preserves_ordered_paths(): void
+    {
+        $descriptor = ExpressionDescriptor::coalesce([
+            ' user.phone ',
+            'user.email',
+        ]);
+
+        $this->assertSame(
+            ExpressionDescriptor::TYPE_COALESCE,
+            $descriptor->type()
+        );
+        $this->assertSame(
+            ['user.phone', 'user.email'],
+            $descriptor->paths()
+        );
+    }
+
+    /**
+     * Ensure CONCAT preserves its path order and separator verbatim.
+     *
+     * @return void
+     */
+    public function test_concat_preserves_paths_and_separator(): void
+    {
+        $descriptor = ExpressionDescriptor::concat(
+            [' parent.name ', 'name'],
+            ' / '
+        );
+
+        $this->assertSame(
+            ExpressionDescriptor::TYPE_CONCAT,
+            $descriptor->type()
+        );
+        $this->assertSame(['parent.name', 'name'], $descriptor->paths());
+        $this->assertSame(' / ', $descriptor->separator());
+    }
+
+    /**
      * Ensure an empty path descriptor is rejected.
      *
      * @return void
@@ -127,5 +208,31 @@ class ExpressionDescriptorTest extends TestCase
             'departments.id',
             ' ',
         ]);
+    }
+
+    /**
+     * Ensure composite descriptors require at least two paths.
+     *
+     * @return void
+     */
+    public function test_coalesce_requires_two_paths(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('requires at least 2 paths');
+
+        ExpressionDescriptor::coalesce(['name']);
+    }
+
+    /**
+     * Ensure concatenation requires at least two paths.
+     *
+     * @return void
+     */
+    public function test_concat_requires_two_paths(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('requires at least 2 paths');
+
+        ExpressionDescriptor::concat(['name']);
     }
 }

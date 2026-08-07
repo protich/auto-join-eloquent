@@ -2,15 +2,16 @@
 
 namespace protich\AutoJoinEloquent\Compilers;
 
-use Illuminate\Database\Query\Builder;
-use protich\AutoJoinEloquent\Support\CompiledExpression;
 use Exception;
+use Illuminate\Database\Query\Builder;
+use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
+use protich\AutoJoinEloquent\Support\CompiledExpression;
 
 /**
  * WhereCompiler
  *
  * Compiles WHERE clause column expressions.
- * Disallows aggregates (e.g. COUNT, SUM) and supports COALESCE with aliasing disabled.
+ * Disallows direct aggregates and supports scalar descriptor expressions.
  */
 class WhereCompiler extends BaseCompiler
 {
@@ -22,9 +23,8 @@ class WhereCompiler extends BaseCompiler
     /**
      * Compile a WHERE clause column expression.
      *
-     * WHERE clauses do not support SQL aliases or aggregate functions.
-     * This method throws if an aggregate is detected, and otherwise delegates
-     * to the base compiler with aliasing explicitly disabled.
+     * WHERE clauses do not support SQL aliases or direct aggregate functions.
+     * Correlated count descriptors remain valid scalar subqueries.
      *
      * @param string $column The raw column expression.
      * @param bool $allowAlias Required by interface; always ignored (false).
@@ -37,6 +37,17 @@ class WhereCompiler extends BaseCompiler
     ): CompiledExpression
     {
         if ($modelPath = $this->parseDescribedPathExpression($column)) {
+            if (in_array($modelPath['descriptor']->type(), [
+                ExpressionDescriptor::TYPE_SUM,
+                ExpressionDescriptor::TYPE_AVG,
+                ExpressionDescriptor::TYPE_MIN,
+                ExpressionDescriptor::TYPE_MAX,
+            ], true)) {
+                throw new Exception(
+                    'Aggregate expressions are not allowed in WHERE clauses.'
+                );
+            }
+
             return $this->compileModelDefinedPath($modelPath, false);
         }
 

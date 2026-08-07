@@ -1,5 +1,38 @@
 # Upgrading Auto Join Eloquent
 
+## From 0.11.0 to 0.11.1
+
+Version 0.11.1 completes the typed `ExpressionDescriptor` vocabulary. No
+application changes are required for existing `path()` or `count()`
+descriptors.
+
+Models may now describe every scalar expression family supported by the
+column compiler:
+
+```php
+return match ($request->path) {
+    'total' => ExpressionDescriptor::sum('items.amount'),
+    'average' => ExpressionDescriptor::avg('items.amount'),
+    'minimum' => ExpressionDescriptor::min('items.amount'),
+    'maximum' => ExpressionDescriptor::max('items.amount'),
+    'contact' => ExpressionDescriptor::coalesce(['phone', 'email']),
+    'label' => ExpressionDescriptor::concat(
+        ['parent.name', 'name'],
+        ' / '
+    ),
+    default => null,
+};
+```
+
+`concat()` uses null-skipping semantics, so an absent parent in the example
+produces `name` without a leading separator. Composite paths are rebased when
+the owning model is reached through another relationship.
+
+Direct scalar aggregate descriptors now follow the same clause rule as parsed
+aggregate expressions and are rejected in `WHERE`. Use `HAVING` for `sum()`,
+`avg()`, `min()`, and `max()` criteria. Multi-path `count()` descriptors remain
+valid in `WHERE` because they compile to correlated scalar subqueries.
+
 ## From 0.10 to 0.11
 
 Version 0.11 resolves normal columns and relationships before asking the model

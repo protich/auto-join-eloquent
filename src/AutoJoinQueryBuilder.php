@@ -904,6 +904,33 @@ class AutoJoinQueryBuilder extends EloquentBuilder
                     $paths,
                     $descriptor->distinct()
                 ),
+            ExpressionDescriptor::TYPE_SUM =>
+                ExpressionDescriptor::sum(
+                    $paths[0],
+                    $descriptor->distinct()
+                ),
+            ExpressionDescriptor::TYPE_AVG =>
+                ExpressionDescriptor::avg(
+                    $paths[0],
+                    $descriptor->distinct()
+                ),
+            ExpressionDescriptor::TYPE_MIN =>
+                ExpressionDescriptor::min(
+                    $paths[0],
+                    $descriptor->distinct()
+                ),
+            ExpressionDescriptor::TYPE_MAX =>
+                ExpressionDescriptor::max(
+                    $paths[0],
+                    $descriptor->distinct()
+                ),
+            ExpressionDescriptor::TYPE_COALESCE =>
+                ExpressionDescriptor::coalesce($paths),
+            ExpressionDescriptor::TYPE_CONCAT =>
+                ExpressionDescriptor::concat(
+                    $paths,
+                    $descriptor->separator() ?? ''
+                ),
             default => throw new \RuntimeException(sprintf(
                 'Unsupported expression descriptor type [%s].',
                 $descriptor->type()

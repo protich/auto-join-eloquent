@@ -152,6 +152,16 @@ public static function describeAutoJoinPath(
                 'groups.departments.id',
             ], distinct: true),
 
+        'preferredContact' => ExpressionDescriptor::coalesce([
+            'phone',
+            'email',
+        ]),
+
+        'serviceLabel' => ExpressionDescriptor::concat(
+            ['parent.name', 'name'],
+            ' / '
+        ),
+
         default => null,
     };
 }
@@ -161,6 +171,18 @@ The returned `ExpressionDescriptor` tells the package how to compile the
 logical expression. For example,
 `organization__cdata__field_id__42` traverses `organization` and `cdata`
 normally, then offers only `field_id__42` to the CData model.
+
+The typed descriptor vocabulary mirrors the column compiler:
+
+- `path()` resolves another local or relationship path.
+- `count()` supports one path or a distinct union of multiple paths.
+- `sum()`, `avg()`, `min()`, and `max()` describe scalar aggregates.
+- `coalesce()` returns the first non-null value from ordered paths.
+- `concat()` joins ordered, non-null path values with a fixed separator.
+
+Every path remains relative to the model that owns the expression. Composite
+and aggregate descriptors are rebased when they are reached through upstream
+relationships, just like ordinary path descriptors.
 
 The optional `model__` marker remains supported as an explicit compatibility
 escape hatch. It asks the base model first and, when declined, follows the same

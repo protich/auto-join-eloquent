@@ -482,14 +482,23 @@ abstract class BaseCompiler
      * @return CompiledExpression
      */
     protected function compileCoalesceExpression(
-        array $info
+        array $info,
+        ?string $relationshipPath = null
     ): CompiledExpression
     {
         $grammar = $this->builder->getGrammar();
 
-        $resolved = array_map(function (string $field) use ($grammar): string {
+        $resolved = array_map(function (string $field) use (
+            $grammar,
+            $relationshipPath
+        ): string {
             $column = $this->parseColumnParts($field)['column'];
-            $expr = $this->resolveColumnExpression($column, null, false);
+            $expr = $this->resolveColumnExpression(
+                $column,
+                null,
+                false,
+                $relationshipPath
+            );
 
             return $expr->getValue($grammar);
         }, $info['fields']);
@@ -630,6 +639,30 @@ abstract class BaseCompiler
                         $allowAlias,
                         $modelPath['path']
                     ),
+                ExpressionDescriptor::TYPE_SUM,
+                ExpressionDescriptor::TYPE_AVG,
+                ExpressionDescriptor::TYPE_MIN,
+                ExpressionDescriptor::TYPE_MAX =>
+                    $this->compileModelAggregateDescriptor(
+                        $descriptor,
+                        $alias,
+                        $allowAlias,
+                        $modelPath['path']
+                    ),
+                ExpressionDescriptor::TYPE_COALESCE =>
+                    $this->compileModelCoalesceDescriptor(
+                        $descriptor,
+                        $alias,
+                        $allowAlias,
+                        $modelPath['path']
+                    ),
+                ExpressionDescriptor::TYPE_CONCAT =>
+                    $this->compileModelConcatDescriptor(
+                        $descriptor,
+                        $alias,
+                        $allowAlias,
+                        $modelPath['path']
+                    ),
                 default => throw new \RuntimeException(sprintf(
                     'Unsupported model-defined descriptor type [%s] for path [%s].',
                     $descriptor->type(),
@@ -711,6 +744,109 @@ abstract class BaseCompiler
             $allowAlias ? $alias : null,
             $allowAlias,
             $sourcePath
+        );
+    }
+
+    /**
+     * Compile a scalar aggregate model descriptor.
+     *
+     * @param  ExpressionDescriptor $descriptor
+     * @param  string|null          $alias
+     * @param  bool                 $allowAlias
+     * @param  string               $sourcePath
+     * @return CompiledExpression
+     */
+    protected function compileModelAggregateDescriptor(
+        ExpressionDescriptor $descriptor,
+        ?string $alias,
+        bool $allowAlias,
+        string $sourcePath
+    ): CompiledExpression {
+        $function = $descriptor->aggregateFunction();
+        $path = $descriptor->paths()[0] ?? null;
+
+        if ($function === null || $path === null) {
+            throw new \LogicException(
+                'Aggregate descriptors require a function and path.'
+            );
+        }
+
+        return $this->compileAggregateExpression(
+            [
+                'aggregateFunction' => $function,
+                'innerExpression' => $path,
+                'alias' => $allowAlias ? $alias : null,
+                'outerExpression' => '',
+                'distinct' => $descriptor->distinct(),
+            ],
+            $allowAlias && $alias === null,
+            $sourcePath
+        );
+    }
+
+    /**
+     * Compile an ordered first-non-null model descriptor.
+     *
+     * @param  ExpressionDescriptor $descriptor
+     * @param  string|null          $alias
+     * @param  bool                 $allowAlias
+     * @param  string               $sourcePath
+     * @return CompiledExpression
+     */
+    protected function compileModelCoalesceDescriptor(
+        ExpressionDescriptor $descriptor,
+        ?string $alias,
+        bool $allowAlias,
+        string $sourcePath
+    ): CompiledExpression {
+        return $this->compileCoalesceExpression(
+            [
+                'fields' => $descriptor->paths(),
+                'alias' => $allowAlias ? $alias : null,
+            ],
+            $sourcePath
+        );
+    }
+
+    /**
+     * Compile null-skipping path concatenation with a fixed separator.
+     *
+     * @param  ExpressionDescriptor $descriptor
+     * @param  string|null          $alias
+     * @param  bool                 $allowAlias
+     * @param  string               $sourcePath
+     * @return CompiledExpression
+     */
+    protected function compileModelConcatDescriptor(
+        ExpressionDescriptor $descriptor,
+        ?string $alias,
+        bool $allowAlias,
+        string $sourcePath
+    ): CompiledExpression {
+        $grammar = $this->builder->getGrammar();
+        $resolved = array_map(
+            function (string $path) use ($grammar, $sourcePath): string {
+                $column = $this->parseColumnParts($path)['column'];
+                $expression = $this->resolveColumnExpression(
+                    $column,
+                    null,
+                    false,
+                    $sourcePath
+                );
+
+                return $expression->getValue($grammar);
+            },
+            $descriptor->paths()
+        );
+        $separator = $grammar->escape($descriptor->separator() ?? '');
+
+        return $this->makeCompiledExpression(
+            sprintf(
+                'CONCAT_WS(%s, %s)',
+                $separator,
+                implode(', ', $resolved)
+            ),
+            $allowAlias ? $alias : null
         );
     }
 

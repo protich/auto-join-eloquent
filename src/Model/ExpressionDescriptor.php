@@ -31,16 +31,36 @@ final readonly class ExpressionDescriptor
     public const TYPE_COUNT = 'count';
 
     /**
+     * Descriptor types for scalar aggregate expressions.
+     */
+    public const TYPE_SUM = 'sum';
+    public const TYPE_AVG = 'avg';
+    public const TYPE_MIN = 'min';
+    public const TYPE_MAX = 'max';
+
+    /**
+     * Descriptor type for the first non-null value across multiple paths.
+     */
+    public const TYPE_COALESCE = 'coalesce';
+
+    /**
+     * Descriptor type for null-skipping path concatenation.
+     */
+    public const TYPE_CONCAT = 'concat';
+
+    /**
      * Create a normalized immutable descriptor.
      *
      * @param  string        $type
      * @param  list<string>  $paths
      * @param  bool          $distinct
+     * @param  string|null   $separator
      */
     private function __construct(
         private string $type,
         private array $paths,
-        private bool $distinct = false
+        private bool $distinct = false,
+        private ?string $separator = null
     ) {
     }
 
@@ -76,16 +96,71 @@ final readonly class ExpressionDescriptor
     {
         $paths = is_string($paths) ? [$paths] : array_values($paths);
 
-        if ($paths === []) {
-            throw new InvalidArgumentException(
-                'Count expression descriptor requires at least one path.'
-            );
-        }
-
         return new self(
             self::TYPE_COUNT,
-            array_map(self::normalizePath(...), $paths),
+            self::normalizePaths($paths, 'Count'),
             $distinct
+        );
+    }
+
+    /**
+     * Describe a SUM aggregate over one auto-join path.
+     */
+    public static function sum(string $path, bool $distinct = false): self
+    {
+        return self::aggregate(self::TYPE_SUM, $path, $distinct);
+    }
+
+    /**
+     * Describe an AVG aggregate over one auto-join path.
+     */
+    public static function avg(string $path, bool $distinct = false): self
+    {
+        return self::aggregate(self::TYPE_AVG, $path, $distinct);
+    }
+
+    /**
+     * Describe a MIN aggregate over one auto-join path.
+     */
+    public static function min(string $path, bool $distinct = false): self
+    {
+        return self::aggregate(self::TYPE_MIN, $path, $distinct);
+    }
+
+    /**
+     * Describe a MAX aggregate over one auto-join path.
+     */
+    public static function max(string $path, bool $distinct = false): self
+    {
+        return self::aggregate(self::TYPE_MAX, $path, $distinct);
+    }
+
+    /**
+     * Describe a COALESCE expression over ordered auto-join paths.
+     *
+     * @param  array<int,string>  $paths
+     */
+    public static function coalesce(array $paths): self
+    {
+        return new self(
+            self::TYPE_COALESCE,
+            self::normalizePaths($paths, 'Coalesce', 2)
+        );
+    }
+
+    /**
+     * Describe null-skipping concatenation over ordered auto-join paths.
+     *
+     * @param  array<int,string>  $paths
+     */
+    public static function concat(
+        array $paths,
+        string $separator = ''
+    ): self {
+        return new self(
+            self::TYPE_CONCAT,
+            self::normalizePaths($paths, 'Concat', 2),
+            separator: $separator
         );
     }
 
@@ -114,8 +189,8 @@ final readonly class ExpressionDescriptor
     /**
      * Get all paths carried by the descriptor.
      *
-     * Path descriptors contain one entry; count descriptors may contain one
-     * or more entries.
+     * Path and scalar aggregate descriptors contain one entry. Count and
+     * composite descriptors may contain multiple ordered paths.
      *
      * @return list<string>
      */
@@ -125,13 +200,76 @@ final readonly class ExpressionDescriptor
     }
 
     /**
-     * Determine whether count compilation should use distinct semantics.
+     * Determine whether aggregate compilation should use distinct semantics.
      *
      * @return bool
      */
     public function distinct(): bool
     {
         return $this->distinct;
+    }
+
+    /**
+     * Get the SQL aggregate function represented by this descriptor.
+     */
+    public function aggregateFunction(): ?string
+    {
+        return match ($this->type) {
+            self::TYPE_COUNT => 'COUNT',
+            self::TYPE_SUM => 'SUM',
+            self::TYPE_AVG => 'AVG',
+            self::TYPE_MIN => 'MIN',
+            self::TYPE_MAX => 'MAX',
+            default => null,
+        };
+    }
+
+    /**
+     * Get the separator for a concatenation descriptor.
+     */
+    public function separator(): ?string
+    {
+        return $this->separator;
+    }
+
+    /**
+     * Create a normalized single-path aggregate descriptor.
+     */
+    private static function aggregate(
+        string $type,
+        string $path,
+        bool $distinct
+    ): self {
+        return new self(
+            $type,
+            [self::normalizePath($path)],
+            $distinct
+        );
+    }
+
+    /**
+     * Normalize and validate an ordered path list.
+     *
+     * @param  array<int,string>  $paths
+     * @return list<string>
+     */
+    private static function normalizePaths(
+        array $paths,
+        string $descriptor,
+        int $minimum = 1
+    ): array {
+        $paths = array_values($paths);
+
+        if (count($paths) < $minimum) {
+            throw new InvalidArgumentException(sprintf(
+                '%s expression descriptor requires at least %s path%s.',
+                $descriptor,
+                $minimum === 1 ? 'one' : (string) $minimum,
+                $minimum === 1 ? '' : 's'
+            ));
+        }
+
+        return array_map(self::normalizePath(...), $paths);
     }
 
     /**
