@@ -4,6 +4,7 @@ namespace protich\AutoJoinEloquent\Tests\Compiler;
 
 use protich\AutoJoinEloquent\Tests\AutoJoinTestCase;
 use protich\AutoJoinEloquent\Tests\Models\Agent;
+use protich\AutoJoinEloquent\Tests\Models\Group;
 
 /**
  * Test: ModelDefinedPathCompilerTest
@@ -160,6 +161,172 @@ class ModelDefinedPathCompilerTest extends AutoJoinTestCase
         $actual = Agent::query()->select('statusAlias')->toSql();
 
         $this->assertSame($expected, $actual);
+    }
+
+    /**
+     * Test every scalar aggregate descriptor compiles through relationship
+     * resolution using the function represented by its factory.
+     *
+     * @return void
+     */
+    public function test_scalar_aggregate_descriptors_compile(): void
+    {
+        $paths = [
+            'departmentIdSum' => 'SUM',
+            'departmentIdAverage' => 'AVG',
+            'departmentIdMinimum' => 'MIN',
+            'departmentIdMaximum' => 'MAX',
+        ];
+
+        foreach ($paths as $path => $function) {
+            $sql = Agent::query()
+                ->select("{$path} as aggregate_value")
+                ->toSql();
+
+            $this->assertStringContainsString("{$function}(", $sql);
+            $this->assertStringContainsString(
+                'as "aggregate_value"',
+                $sql
+            );
+        }
+    }
+
+    /**
+     * Test COALESCE descriptors resolve each relationship path in order.
+     *
+     * @return void
+     */
+    public function test_coalesce_descriptor_compiles_and_executes(): void
+    {
+        $agent = Agent::query()
+            ->where('user_id', 1)
+            ->select('preferredContact as contact')
+            ->firstOrFail();
+
+        $this->assertSame('peter@osticket.com', $agent->contact);
+        $this->assertStringContainsString(
+            'COALESCE(',
+            Agent::query()
+                ->select('preferredContact as contact')
+                ->toSql()
+        );
+    }
+
+    /**
+     * Test concatenation descriptors skip null paths and retain separators.
+     *
+     * @return void
+     */
+    public function test_concat_descriptor_compiles_and_executes(): void
+    {
+        $agent = Agent::query()
+            ->where('user_id', 1)
+            ->select('displayLabel as label')
+            ->firstOrFail();
+
+        $this->assertSame(
+            'Peter Rotich / Auto Join Package Developer',
+            $agent->label
+        );
+        $this->assertStringContainsString(
+            'CONCAT_WS(\' / \',',
+            Agent::query()
+                ->select('displayLabel as label')
+                ->toSql()
+        );
+
+        $contact = Agent::query()
+            ->where('user_id', 1)
+            ->select('contactLabel as label')
+            ->firstOrFail();
+
+        $this->assertSame('peter@osticket.com', $contact->label);
+    }
+
+    /**
+     * Test scalar composite descriptors compile in WHERE and ORDER BY.
+     *
+     * @return void
+     */
+    public function test_composite_descriptors_compile_across_clauses(): void
+    {
+        $query = Agent::query()
+            ->select('displayLabel as label')
+            ->where(
+                'preferredContact',
+                'peter@osticket.com'
+            )
+            ->orderBy('displayLabel');
+
+        $sql = $query->toSql();
+
+        $this->assertStringContainsString('COALESCE(', $sql);
+        $this->assertStringContainsString('CONCAT_WS(', $sql);
+        $this->assertStringContainsString(
+            'order by "label" asc',
+            $sql
+        );
+        $this->assertSame(
+            'Peter Rotich / Auto Join Package Developer',
+            $query->firstOrFail()->label
+        );
+    }
+
+    /**
+     * Test aggregate descriptor types obey the normal WHERE restriction.
+     *
+     * @return void
+     */
+    public function test_aggregate_descriptors_are_rejected_in_where(): void
+    {
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage(
+            'Aggregate expressions are not allowed in WHERE clauses.'
+        );
+
+        Agent::query()->where('departmentIdSum', '>', 0)->toSql();
+    }
+
+    /**
+     * Test composite descriptors rebase through a downstream model hop.
+     *
+     * @return void
+     */
+    public function test_composite_descriptor_paths_are_rebased(): void
+    {
+        $sql = \protich\AutoJoinEloquent\Tests\Models\User::query()
+            ->select('agent__displayLabel as agent_label')
+            ->toSql();
+
+        $this->assertStringContainsString('CONCAT_WS(', $sql);
+        $this->assertStringContainsString('as "agent_label"', $sql);
+        $this->assertSame(2, substr_count($sql, 'join'));
+    }
+
+    /**
+     * Test concatenation qualifies children through a nullable self-parent.
+     *
+     * @return void
+     */
+    public function test_concat_descriptor_supports_nullable_self_parent(): void
+    {
+        $labels = Group::query()
+            ->select(['name', 'label as qualified_label'])
+            ->orderBy('label')
+            ->pluck('qualified_label', 'name');
+
+        $this->assertSame('Support', $labels['Support']);
+        $this->assertSame(
+            'Support / Escalations',
+            $labels['Escalations']
+        );
+
+        $sql = Group::query()
+            ->select('label as qualified_label')
+            ->toSql();
+
+        $this->assertStringContainsString('CONCAT_WS(', $sql);
+        $this->assertSame(1, substr_count($sql, 'join "ost_groups"'));
     }
 
     /**

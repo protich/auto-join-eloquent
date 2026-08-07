@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use protich\AutoJoinEloquent\Model\AutoJoinRelation;
+use protich\AutoJoinEloquent\Model\ExpressionDescriptor;
+use protich\AutoJoinEloquent\Model\PathRequest;
 use protich\AutoJoinEloquent\Tests\Models\Department;
 
 /**
@@ -37,6 +39,24 @@ class Group extends BaseModel
         'name',
         'parent_id',
     ];
+
+    /**
+     * Describe the qualified label used by flat hierarchy surfaces.
+     *
+     * @param  PathRequest  $request
+     * @return ExpressionDescriptor|null
+     */
+    public static function describeAutoJoinPath(
+        PathRequest $request
+    ): ?ExpressionDescriptor {
+        return match ($request->path) {
+            'label' => ExpressionDescriptor::concat(
+                ['parent.name', 'name'],
+                ' / '
+            ),
+            default => parent::describeAutoJoinPath($request),
+        };
+    }
 
     /**
      * Get the parent group.

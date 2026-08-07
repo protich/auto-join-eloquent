@@ -109,6 +109,30 @@ class Agent extends BaseModel
                 ],
                 distinct: true
             ),
+            'departmentIdSum' => ExpressionDescriptor::sum(
+                'departments.id'
+            ),
+            'departmentIdAverage' => ExpressionDescriptor::avg(
+                'departments.id'
+            ),
+            'departmentIdMinimum' => ExpressionDescriptor::min(
+                'departments.id'
+            ),
+            'departmentIdMaximum' => ExpressionDescriptor::max(
+                'departments.id'
+            ),
+            'preferredContact' => ExpressionDescriptor::coalesce([
+                'user.phone',
+                'user.email',
+            ]),
+            'displayLabel' => ExpressionDescriptor::concat(
+                ['user.name', 'position'],
+                ' / '
+            ),
+            'contactLabel' => ExpressionDescriptor::concat(
+                ['user.phone', 'user.email'],
+                ' / '
+            ),
             default => parent::describeAutoJoinPath($request),
         };
     }
