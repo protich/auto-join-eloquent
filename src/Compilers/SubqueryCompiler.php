@@ -59,6 +59,8 @@ class SubqueryCompiler extends BaseCompiler
 
         $builder->setModel($model);
         $builder->setBaseModel($model);
+        $builder->setJoinConstraint($this->outerBuilder->getJoinConstraint());
+        $builder->setPivotJoinConstraint($this->outerBuilder->getPivotJoinConstraint());
         $builder->setDefaultJoinType($this->outerBuilder->getDefaultJoinType());
         $builder->setUseSimpleAliases(
             $this->outerBuilder->getAliasManager()->getUseSimpleAliases()
@@ -113,11 +115,13 @@ class SubqueryCompiler extends BaseCompiler
      *
      * @param  string      $path
      * @param  string|null $relationshipPath
+     * @param  bool        $excludeNull Omit NULL placeholders when counting distinct path values.
      * @return \Illuminate\Database\Query\Builder
      */
     protected function buildPathSelectSubquery(
         string $path,
-        ?string $relationshipPath = null
+        ?string $relationshipPath = null,
+        bool $excludeNull = false
     ) {
         $path = trim($path);
 
@@ -141,6 +145,9 @@ class SubqueryCompiler extends BaseCompiler
             $relationshipPath
         );
         $resolvedSql = $resolved->getValue($grammar);
+        if ($excludeNull) {
+            $builder->whereNotNull(new CompiledExpression($resolvedSql));
+        }
 
         $builder->select(
             new CompiledExpression($resolvedSql)
@@ -215,15 +222,18 @@ class SubqueryCompiler extends BaseCompiler
      *
      * @param  string      $path
      * @param  string|null $relationshipPath
+     * @param  bool        $excludeNull Omit NULL placeholders when counting distinct path values.
      * @return SubQueryExpression
      */
     public function compilePathSelectSubquerySqlExpression(
         string $path,
-        ?string $relationshipPath = null
+        ?string $relationshipPath = null,
+        bool $excludeNull = false
     ): SubQueryExpression {
         $query = $this->buildPathSelectSubquery(
             $path,
-            $relationshipPath
+            $relationshipPath,
+            $excludeNull
         );
 
         return new SubQueryExpression(
@@ -482,10 +492,7 @@ class SubqueryCompiler extends BaseCompiler
             }
         }
 
-        if (
-            $targetRelation === null
-            || $targetChain === null
-        ) {
+        if ($targetRelation === null) {
             throw new RuntimeException(
                 'EXISTS count paths must not be empty.'
             );

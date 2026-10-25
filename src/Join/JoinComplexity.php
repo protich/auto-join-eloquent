@@ -22,14 +22,16 @@ final class JoinComplexity
      *
      * Eloquent's standard BelongsToMany pivot join is ignored because the
      * auto-joiner already derives it from relationship metadata. Additional
-     * joins and row-affecting query state make the relationship complex.
+     * joins and explicitly declared row-affecting query state make the relationship
+     * complex. Related-model global scopes are application query policy, not
+     * relationship structure, and are never applied by this probe.
      *
      * @param  Relation<\Illuminate\Database\Eloquent\Model, \Illuminate\Database\Eloquent\Model, mixed>  $relation
      * @return bool
      */
     public static function isComplex(Relation $relation): bool
     {
-        $query = $relation->getQuery()->applyScopes()->getQuery();
+        $query = $relation->getQuery()->getQuery();
 
         foreach ([
             'wheres',

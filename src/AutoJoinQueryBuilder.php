@@ -18,15 +18,64 @@ use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder as Query;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Facades\Log;
+use Closure;
 
 /**
  * @extends EloquentBuilder<Model>
  */
 class AutoJoinQueryBuilder extends EloquentBuilder
 {
+    /** @var Closure(JoinClause, Model, string): void|null */
+    protected ?Closure $joinConstraint = null;
+
+    /**
+     * Supply explicit application constraints for each related-table join.
+     * The callback receives the real ON clause, related model and generated alias.
+     * Pivot keys and model-described predicates remain structural package inputs.
+     *
+     * @param Closure(JoinClause, Model, string): void|null $constraint
+     * @return $this
+     */
+    public function setJoinConstraint(?Closure $constraint): static
+    {
+        $this->joinConstraint = $constraint;
+
+        return $this;
+    }
+
+    /** @return Closure(JoinClause, Model, string): void|null */
+    public function getJoinConstraint(): ?Closure
+    {
+        return $this->joinConstraint;
+    }
+
+    /** @var Closure(JoinClause, BelongsToMany<Model, Model, Pivot, string>, string): void|null */
+    protected ?Closure $pivotJoinConstraint = null;
+
+    /**
+     * Supply explicit ON constraints for the pivot stage of a many-to-many join.
+     *
+     * @param Closure(JoinClause, BelongsToMany<Model, Model, Pivot, string>, string): void|null $constraint
+     * @return $this
+     */
+    public function setPivotJoinConstraint(?Closure $constraint): static
+    {
+        $this->pivotJoinConstraint = $constraint;
+
+        return $this;
+    }
+
+    /** @return Closure(JoinClause, BelongsToMany<Model, Model, Pivot, string>, string): void|null */
+    public function getPivotJoinConstraint(): ?Closure
+    {
+        return $this->pivotJoinConstraint;
+    }
+
     /**
      * Prefix that routes a query expression to its model for description.
      */
@@ -1212,6 +1261,7 @@ class AutoJoinQueryBuilder extends EloquentBuilder
                 'table'    => $tableExpression->getValue($grammar),
                 'chainKey' => $context->getChainKey(), // Tagged chain key can be modified as needed.
                 'alias'    => $joinAlias,
+                'model'    => $joinInfo->getRelatedModel(),
             ]
         );
 
@@ -1281,7 +1331,8 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             [
                 'chainKey' => $pivotChainKey,
                 'table'    => $pivotTableExpr->getValue($grammar),
-                'alias'    => $pivotAlias
+                'alias'    => $pivotAlias,
+                'pivotRelation' => $context->getAutoJoinRelation()->relation()
             ]
         );
 
@@ -1323,7 +1374,8 @@ class AutoJoinQueryBuilder extends EloquentBuilder
             [
                 'chainKey' => $relatedChainKey,
                 'table'    => $relatedTableExpr->getValue($grammar),
-                'alias'    => $relatedAlias
+                'alias'    => $relatedAlias,
+                'model'    => $relatedModel
             ]
         );
 
@@ -1398,6 +1450,20 @@ class AutoJoinQueryBuilder extends EloquentBuilder
                     ),
                 };
             }
+            if ($this->joinConstraint !== null && ($context['model'] ?? null) instanceof Model) {
+                if (! is_string($context['alias'] ?? null)) {
+                    throw new \LogicException('A related-table join requires a generated alias.');
+                }
+                ($this->joinConstraint)($join, $context['model'], $context['alias']);
+            }
+
+            if ($this->pivotJoinConstraint !== null && ($context['pivotRelation'] ?? null) instanceof BelongsToMany) {
+                if (! is_string($context['alias'] ?? null)) {
+                    throw new \LogicException('A pivot join requires a generated alias.');
+                }
+                ($this->pivotJoinConstraint)($join, $context['pivotRelation'], $context['alias']);
+            }
+
             // Track this join operation.
             $this->onJoin($join, array_merge($context, [
                 'conditions' => $conditions,
