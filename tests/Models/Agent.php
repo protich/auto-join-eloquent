@@ -121,6 +121,14 @@ class Agent extends BaseModel
             'departmentIdMaximum' => ExpressionDescriptor::max(
                 'departments.id'
             ),
+            'userNamed__Alice__countFallback' => ExpressionDescriptor::coalesce([
+                'user.phone',
+                'userByName__id__count',
+            ]),
+            'departmentCountFallback' => ExpressionDescriptor::coalesce([
+                'user.phone',
+                'departments__id__count',
+            ]),
             'preferredContact' => ExpressionDescriptor::coalesce([
                 'user.phone',
                 'user.email',
