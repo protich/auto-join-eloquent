@@ -436,12 +436,39 @@ abstract class BaseCompiler
      */
     protected function parseCoalesceExpression(string $expression): array|false
     {
-        if (!preg_match('/^COALESCE\s*\((.*?)\)(.*)$/i', $expression, $m)) {
+        if (!preg_match('/^COALESCE\s*\(/i', $expression, $m)) {
             return false;
         }
 
-        $fields = array_map('trim', explode(',', $m[1]));
-        $remainder = trim($m[2] ?: '');
+        // Only commas at the outer argument level separate fallback paths.
+        // Nested functions must reach the expression compiler intact.
+        $fields = [];
+        $start = strlen($m[0]);
+        $depth = 1;
+        $length = strlen($expression);
+
+        for ($offset = $start; $offset < $length; $offset++) {
+            $character = $expression[$offset];
+
+            if ($character === '(') {
+                $depth++;
+            } elseif ($character === ')') {
+                $depth--;
+                if ($depth === 0) {
+                    $fields[] = trim(substr($expression, $start, $offset - $start));
+                    break;
+                }
+            } elseif ($character === ',' && $depth === 1) {
+                $fields[] = trim(substr($expression, $start, $offset - $start));
+                $start = $offset + 1;
+            }
+        }
+
+        if ($depth !== 0 || count($fields) < 2 || in_array('', $fields, true)) {
+            return false;
+        }
+
+        $remainder = trim(substr($expression, $offset + 1));
 
         $alias = null;
         $outer = '';
@@ -1192,6 +1219,22 @@ abstract class BaseCompiler
                 $modelPath,
                 $allowAutoAliasing
             );
+        }
+
+        if ($aggregate = $this->parseAggregateExpression($column)) {
+            $aggregate['alias'] = $alias ?? $aggregate['alias'];
+
+            return $this->compileAggregateExpression(
+                $aggregate,
+                $allowAutoAliasing,
+                $relationshipPath
+            );
+        }
+
+        if ($coalesce = $this->parseCoalesceExpression($column)) {
+            $coalesce['alias'] = $alias ?? $coalesce['alias'];
+
+            return $this->compileCoalesceExpression($coalesce, $relationshipPath);
         }
 
         return $this->builder->resolveColumnExpression(
