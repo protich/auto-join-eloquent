@@ -996,7 +996,8 @@ abstract class BaseCompiler
             fn (string $path) => (new SubqueryCompiler($this->builder))
                 ->compilePathSelectSubquerySqlExpression(
                     $path,
-                    $sourcePath
+                    $sourcePath,
+                    excludeNull: true
                 ),
             $paths
         );

@@ -87,11 +87,11 @@ class JoinComplexityTest extends AutoJoinTestCase
     }
 
     /**
-     * Ensure applied global scopes are detected without mutating the relation.
+     * Ensure ambient scopes do not change structural complexity or execute during probing.
      *
      * @return void
      */
-    public function test_global_scope_is_detected_without_mutating_relation(): void
+    public function test_global_scope_does_not_make_a_relation_complex(): void
     {
         $relation = $this->relation(new Agent, 'user');
         $builder = $relation->getQuery();
@@ -102,8 +102,10 @@ class JoinComplexityTest extends AutoJoinTestCase
         );
 
         $this->assertSame([], $builder->getQuery()->wheres);
-        $this->assertTrue(JoinComplexity::isComplex($relation));
+        $this->assertFalse(JoinComplexity::isComplex($relation));
         $this->assertSame([], $builder->getQuery()->wheres);
+        $builder->where('users.name', 'Alice');
+        $this->assertTrue(JoinComplexity::isComplex($relation));
     }
 
     /**
